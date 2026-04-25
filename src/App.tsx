@@ -37,6 +37,7 @@ const MIN_MANUAL_ZOOM = 1
 const MAX_MANUAL_ZOOM = 5
 const ZOOM_BUTTON_STEP = 0.25
 const WHEEL_ZOOM_FACTOR = 1.08
+const NAVIGATION_GESTURE_LOCK_RELEASE_MS = 180
 
 type BrushColor = (typeof SIDE_BRUSH_COLORS)[keyof typeof SIDE_BRUSH_COLORS]
 type ToolMode = 'ink' | GrenadeType
@@ -93,6 +94,13 @@ type MapViewTransform = {
 type PanGesture = {
   panStart: Point
   pointerStart: Point
+}
+
+type NavigationGestureMode = 'pan' | 'zoom'
+
+type NavigationGestureLock = {
+  mode: NavigationGestureMode
+  releaseTimer: number | null
 }
 
 const UTILITY_TOOL_OPTIONS: {
@@ -350,6 +358,7 @@ function App() {
   const activeLineRef = useRef<Konva.Line | null>(null)
   const isDrawingRef = useRef(false)
   const panGestureRef = useRef<PanGesture | null>(null)
+  const navigationGestureLockRef = useRef<NavigationGestureLock | null>(null)
   const annotationIdRef = useRef(0)
   const brushCursorRef = useRef<HTMLDivElement>(null)
   const activeBrushColorRef = useRef<BrushColor>(SIDE_BRUSH_COLORS.t)
@@ -436,6 +445,50 @@ function App() {
     })
   }, [getNextAnnotationId, pushHistoryAction, selectedMapId])
 
+  const releaseNavigationGestureLock = useCallback(() => {
+    const currentLock = navigationGestureLockRef.current
+    const releaseTimer = currentLock?.releaseTimer
+
+    if (releaseTimer !== undefined && releaseTimer !== null) {
+      window.clearTimeout(releaseTimer)
+    }
+
+    navigationGestureLockRef.current = null
+  }, [])
+
+  const lockNavigationGesture = useCallback(
+    (
+      mode: NavigationGestureMode,
+      releaseDelay: number | null = NAVIGATION_GESTURE_LOCK_RELEASE_MS,
+    ) => {
+      const currentLock = navigationGestureLockRef.current
+      const releaseTimer = currentLock?.releaseTimer
+
+      if (currentLock && currentLock.mode !== mode) {
+        return false
+      }
+
+      if (releaseTimer !== undefined && releaseTimer !== null) {
+        window.clearTimeout(releaseTimer)
+      }
+
+      navigationGestureLockRef.current = {
+        mode,
+        releaseTimer:
+          releaseDelay === null
+            ? null
+            : window.setTimeout(() => {
+                if (navigationGestureLockRef.current?.mode === mode) {
+                  navigationGestureLockRef.current = null
+                }
+              }, releaseDelay),
+      }
+
+      return true
+    },
+    [],
+  )
+
   const stopPanGesture = useCallback(() => {
     panGestureRef.current = null
   }, [])
@@ -444,6 +497,7 @@ function App() {
     const handlePointerEnd = () => {
       finishActiveStroke()
       stopPanGesture()
+      releaseNavigationGestureLock()
     }
 
     window.addEventListener('pointerup', handlePointerEnd)
@@ -452,8 +506,9 @@ function App() {
     return () => {
       window.removeEventListener('pointerup', handlePointerEnd)
       window.removeEventListener('pointercancel', handlePointerEnd)
+      releaseNavigationGestureLock()
     }
-  }, [finishActiveStroke, stopPanGesture])
+  }, [finishActiveStroke, releaseNavigationGestureLock, stopPanGesture])
 
   const getLogicalPointerPosition = (event: KonvaEventObject<PointerEvent>) => {
     const stage = event.target.getStage()
@@ -563,6 +618,11 @@ function App() {
       }
 
       event.evt.preventDefault()
+
+      if (!lockNavigationGesture('pan', null)) {
+        return
+      }
+
       finishActiveStroke()
       hideBrushCursor()
       setIsAutoZoom(false)
@@ -667,6 +727,7 @@ function App() {
   const handlePointerUp = () => {
     finishActiveStroke()
     stopPanGesture()
+    releaseNavigationGestureLock()
   }
 
   const removeCurrentMapAnnotations = (
@@ -728,9 +789,15 @@ function App() {
       return
     }
 
-    const { ctrlKey, deltaMode, deltaX, deltaY } = event.evt
-    const isTrackpadPan =
-      !ctrlKey && (Math.abs(deltaX) > 0 || (deltaMode === 0 && Math.abs(deltaY) < 40))
+    const { ctrlKey, deltaX, deltaY } = event.evt
+    // @ink:ux Do not classify small vertical-only wheel deltas as trackpad pan; smooth mouse wheels emit those too.
+    const isTrackpadPan = !ctrlKey && Math.abs(deltaX) > 0
+    const gestureMode: NavigationGestureMode = isTrackpadPan ? 'pan' : 'zoom'
+
+    // @ink:ux Wheel gestures can emit mixed pan/zoom-looking deltas; first mode wins until the event burst settles.
+    if (!lockNavigationGesture(gestureMode)) {
+      return
+    }
 
     if (isTrackpadPan) {
       finishActiveStroke()
