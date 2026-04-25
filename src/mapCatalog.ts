@@ -16,6 +16,7 @@ export type MapId = (typeof MAP_IDS)[number]
 export type GameMap = {
   id: MapId
   name: string
+  badgeSrc: string
   radarSrc: string
 }
 
@@ -43,6 +44,7 @@ function formatMapName(mapId: MapId) {
 export const GAME_MAPS: GameMap[] = MAP_IDS.map((id) => ({
   id,
   name: formatMapName(id),
+  badgeSrc: getPublicAssetUrl(`/maps/${id}/badge.png`),
   radarSrc: getPublicAssetUrl(`/maps/${id}/radar.png`),
 }))
 

@@ -64,39 +64,64 @@
 }
 
 .map-title {
-  position: relative;
-  display: inline-flex;
+  display: inline-block;
+}
+
+.map-picker {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.map-picker-button {
+  display: flex;
+  min-width: 0;
+  min-height: 118px;
+  flex-direction: column;
   align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border-radius: 18px;
+  padding: 12px 8px;
+  background: rgba(255, 255, 255, 0.035);
+  transition:
+    border-color 160ms ease,
+    background-color 160ms ease,
+    box-shadow 160ms ease,
+    transform 160ms ease;
 }
 
-.map-title select {
-  max-width: min(78vw, 560px);
-  appearance: none;
-  border: 0;
-  padding: 0 0.62em 0 0;
-  color: inherit;
-  background: transparent;
-  font: inherit;
-  line-height: inherit;
-  letter-spacing: inherit;
-  cursor: pointer;
+.map-picker-button:hover {
+  border-color: rgba(255, 255, 255, 0.24);
+  background: rgba(255, 255, 255, 0.075);
 }
 
-.map-title select:focus-visible {
-  outline: 3px solid var(--focus);
-  outline-offset: 6px;
-  border-radius: 10px;
+.map-picker-button[aria-pressed='true'] {
+  border-color: #22c55e;
+  box-shadow: 0 0 0 1px rgba(34, 197, 94, 0.36);
 }
 
-.title-chevron {
-  position: absolute;
-  right: 0;
-  width: 0.24em;
-  height: 0.24em;
-  border-right: 0.08em solid currentColor;
-  border-bottom: 0.08em solid currentColor;
-  pointer-events: none;
-  transform: translateY(-18%) rotate(45deg);
+.map-picker-button[aria-pressed='true']:hover {
+  border-color: #22c55e;
+  background: rgba(34, 197, 94, 0.12);
+}
+
+.map-picker-badge {
+  width: 58px;
+  height: 58px;
+  object-fit: contain;
+}
+
+.map-picker-name {
+  overflow: hidden;
+  max-width: 100%;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.1;
+  text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 button {

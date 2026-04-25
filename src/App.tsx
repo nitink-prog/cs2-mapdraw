@@ -9,7 +9,6 @@ import {
 } from 'react'
 import { Image, Layer, Stage, Text } from 'react-konva'
 import type { KonvaEventObject } from 'konva/lib/Node'
-import type { ChangeEvent } from 'react'
 import { DEFAULT_MAP_ID, GAME_MAPS, getGameMapById } from './mapCatalog'
 import type { MapId } from './mapCatalog'
 import './App.css'
@@ -185,9 +184,13 @@ function App() {
     stopDrawing()
   }
 
-  const handleMapChange = (event: ChangeEvent<HTMLSelectElement>) => {
+  const handleMapSelect = (mapId: MapId) => {
+    if (mapId === selectedMapId) {
+      return
+    }
+
     clearDrawing()
-    setSelectedMapId(event.target.value as MapId)
+    setSelectedMapId(mapId)
   }
 
   return (
@@ -196,27 +199,27 @@ function App() {
         <header>
           <p className="eyebrow">CS2 MapDraw MVP</p>
           <h1 aria-label={selectedMap.name}>
-            <span className="map-title">
-              <select
-                aria-label="Select map"
-                value={selectedMapId}
-                onChange={handleMapChange}
-              >
-                {GAME_MAPS.map((map) => (
-                  <option key={map.id} value={map.id}>
-                    {map.name}
-                  </option>
-                ))}
-              </select>
-              <span aria-hidden="true" className="title-chevron">
-              </span>
-            </span>
+            <span className="map-title">{selectedMap.name}</span>
           </h1>
         </header>
 
-        <section>
-          <h2>General & Map Info</h2>
-          <p className="panel-copy">Map settings and callout metadata will live here.</p>
+        <section className="map-picker" aria-label="Choose map">
+          {GAME_MAPS.map((map) => {
+            const isSelected = map.id === selectedMapId
+
+            return (
+              <button
+                key={map.id}
+                type="button"
+                className="map-picker-button"
+                aria-pressed={isSelected}
+                onClick={() => handleMapSelect(map.id)}
+              >
+                <img src={map.badgeSrc} alt="" className="map-picker-badge" />
+                <span className="map-picker-name">{map.name}</span>
+              </button>
+            )
+          })}
         </section>
       </aside>
 
