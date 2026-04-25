@@ -26,7 +26,7 @@ const SPECIAL_MAP_NAMES: Partial<Record<MapId, string>> = {
   de_dust2: 'Dust II',
 }
 
-function getPublicAssetUrl(path: string) {
+export function getPublicAssetUrl(path: string) {
   // @ink:gotcha Public assets must include Vite's base path so project-site deploys load from /cs2-mapdraw/.
   return `${import.meta.env.BASE_URL}${path.replace(/^\//, '')}`
 }

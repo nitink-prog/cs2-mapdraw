@@ -14,7 +14,12 @@ import {
   getGrenadeLogicalRadius,
   type GrenadeType,
 } from './grenadeEffects'
-import { DEFAULT_MAP_ID, GAME_MAPS, getGameMapById } from './mapCatalog'
+import {
+  DEFAULT_MAP_ID,
+  GAME_MAPS,
+  getGameMapById,
+  getPublicAssetUrl,
+} from './mapCatalog'
 import type { MapId } from './mapCatalog'
 import { useMapMetadata } from './mapMetadata'
 import './App.css'
@@ -36,13 +41,26 @@ type GrenadeMarker = {
   y: number
 }
 
-const TOOL_OPTIONS: {
-  id: ToolMode
+const UTILITY_TOOL_OPTIONS: {
+  id: GrenadeType
+  iconSrc: string
   label: string
 }[] = [
-  { id: 'ink', label: 'Ink' },
-  { id: 'smoke', label: GRENADE_EFFECTS.smoke.label },
-  { id: 'flash', label: GRENADE_EFFECTS.flash.label },
+  {
+    id: 'smoke',
+    iconSrc: getPublicAssetUrl('/icons/utils/smokegrenade.svg'),
+    label: GRENADE_EFFECTS.smoke.label,
+  },
+  {
+    id: 'flash',
+    iconSrc: getPublicAssetUrl('/icons/utils/flashbang.svg'),
+    label: GRENADE_EFFECTS.flash.label,
+  },
+  {
+    id: 'molotov',
+    iconSrc: getPublicAssetUrl('/icons/utils/molotov.svg'),
+    label: GRENADE_EFFECTS.molotov.label,
+  },
 ]
 
 type StageSize = {
@@ -347,6 +365,12 @@ function App() {
     setGrenadeMarkers([])
   }
 
+  const handleUtilityToolSelect = (utilityType: GrenadeType) => {
+    setSelectedTool((currentTool) =>
+      currentTool === utilityType ? 'ink' : utilityType,
+    )
+  }
+
   const handleMapSelect = (mapId: MapId) => {
     if (mapId === selectedMapId) {
       return
@@ -506,28 +530,15 @@ function App() {
 
       <aside className="side-panel tools-panel" aria-label="Inking and tools">
         <header>
-          <p className="eyebrow">Inking</p>
           <h2>Tools</h2>
         </header>
 
         <section className="tool-group" aria-label="Annotation tools">
-          <div className="tool-button-grid">
-            {TOOL_OPTIONS.map((tool) => (
-              <button
-                key={tool.id}
-                type="button"
-                className="tool-button"
-                aria-pressed={selectedTool === tool.id}
-                onClick={() => setSelectedTool(tool.id)}
-              >
-                {tool.label}
-              </button>
-            ))}
-          </div>
           <p className="panel-copy">
             Smoke radius is {GRENADE_EFFECTS.smoke.radiusGameUnits}u. Flash is
             a {GRENADE_EFFECTS.flash.radiusGameUnits}u reference radius; real
-            flashes also depend on line of sight and view angle.
+            flashes also depend on line of sight and view angle. Molotov max
+            spread is {GRENADE_EFFECTS.molotov.radiusGameUnits}u.
           </p>
           {selectedMapMetadata.status === 'loading' ? (
             <p className="panel-copy">Loading map scale...</p>
@@ -588,6 +599,20 @@ function App() {
         <p className="panel-copy">
           Left-drag draws T-side orange. Right-drag draws CT-side blue.
         </p>
+        <section className="utility-tool-section" aria-label="Utility tools">
+          {UTILITY_TOOL_OPTIONS.map((tool) => (
+            <button
+              key={tool.id}
+              type="button"
+              className="utility-tool-button"
+              aria-pressed={selectedTool === tool.id}
+              onClick={() => handleUtilityToolSelect(tool.id)}
+            >
+              <img src={tool.iconSrc} alt="" className="utility-tool-icon" />
+              <span>{tool.label}</span>
+            </button>
+          ))}
+        </section>
       </aside>
     </main>
   )

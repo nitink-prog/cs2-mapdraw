@@ -13,6 +13,13 @@ export const GRENADE_EFFECTS = {
     stroke: 'rgba(250, 204, 21, 0.78)',
     symbol: 'F',
   },
+  molotov: {
+    fill: 'rgba(249, 115, 22, 0.16)',
+    label: 'Molotov',
+    radiusGameUnits: 150,
+    stroke: 'rgba(249, 115, 22, 0.9)',
+    symbol: 'M',
+  },
 } as const
 
 export type GrenadeType = keyof typeof GRENADE_EFFECTS
