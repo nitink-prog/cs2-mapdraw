@@ -29,7 +29,8 @@ const SIDE_BRUSH_COLORS = {
   t: '#FDAC1A',
   ct: '#1c3bec',
 } as const
-const BRUSH_SIZE = 7
+const BRUSH_SIZE = 3
+const BRUSH_CURSOR_SIZE = 7
 
 type BrushColor = (typeof SIDE_BRUSH_COLORS)[keyof typeof SIDE_BRUSH_COLORS]
 type ToolMode = 'ink' | GrenadeType
@@ -160,7 +161,7 @@ function App() {
   )
 
   const brushCursorStyle = useMemo(() => {
-    const brushCursorSize = `${BRUSH_SIZE * stageSize.scale}px`
+    const brushCursorSize = `${BRUSH_CURSOR_SIZE * stageSize.scale}px`
 
     return {
       width: brushCursorSize,
