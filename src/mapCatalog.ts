@@ -23,6 +23,11 @@ const SPECIAL_MAP_NAMES: Partial<Record<MapId, string>> = {
   de_dust2: 'Dust II',
 }
 
+function getPublicAssetUrl(path: string) {
+  // @ink:gotcha Public assets must include Vite's base path so project-site deploys load from /cs2-mapdraw/.
+  return `${import.meta.env.BASE_URL}${path.replace(/^\//, '')}`
+}
+
 function formatMapName(mapId: MapId) {
   const baseName = mapId.replace(/^de_/, '')
 
@@ -38,7 +43,7 @@ function formatMapName(mapId: MapId) {
 export const GAME_MAPS: GameMap[] = MAP_IDS.map((id) => ({
   id,
   name: formatMapName(id),
-  radarSrc: `/maps/${id}/radar.png`,
+  radarSrc: getPublicAssetUrl(`/maps/${id}/radar.png`),
 }))
 
 export const DEFAULT_MAP_ID: MapId = 'de_dust2'
