@@ -5,13 +5,13 @@ import {
   useMemo,
   useRef,
   useState,
-  type RefObject,
 } from 'react'
 import { Circle, Group, Image, Layer, Line, Stage, Text } from 'react-konva'
 import type { KonvaEventObject } from 'konva/lib/Node'
 import {
   GRENADE_EFFECTS,
   getGrenadeLogicalRadius,
+  getMaxGrenadeLogicalRadius,
   type GrenadeType,
 } from './grenadeEffects'
 import {
@@ -31,6 +31,7 @@ const SIDE_BRUSH_COLORS = {
 } as const
 const BRUSH_SIZE = 3
 const BRUSH_CURSOR_SIZE = 7
+const VIEWPORT_STAGE_PADDING = 32
 
 type BrushColor = (typeof SIDE_BRUSH_COLORS)[keyof typeof SIDE_BRUSH_COLORS]
 type ToolMode = 'ink' | GrenadeType
@@ -134,6 +135,15 @@ function isEditableKeyboardTarget(target: EventTarget | null) {
   )
 }
 
+function isMapPointInBounds(point: { x: number; y: number }) {
+  return (
+    point.x >= 0 &&
+    point.x <= MAP_WORLD_SIZE &&
+    point.y >= 0 &&
+    point.y <= MAP_WORLD_SIZE
+  )
+}
+
 function applyHistoryAction(annotations: Annotation[], action: HistoryAction) {
   if (action.kind === 'add') {
     return [...annotations, action.annotation]
@@ -169,47 +179,53 @@ function revertHistoryAction(annotations: Annotation[], action: HistoryAction) {
 }
 
 type StageSize = {
-  width: number
   height: number
-  scale: number
+  mapScale: number
+  mapX: number
+  mapY: number
+  width: number
 }
 
-function getStageSize(containerWidth?: number): StageSize {
-  const availableWidth = (containerWidth ?? window.innerWidth) - 32
-  const availableHeight = window.innerHeight - 48
-  const displaySize = Math.max(
-    280,
-    Math.min(MAP_WORLD_SIZE, availableWidth, availableHeight),
+function getStageSize(mapEffectPadding = 0): StageSize {
+  const width = window.innerWidth
+  const height = window.innerHeight
+  const mapWithEffectPadding = MAP_WORLD_SIZE + mapEffectPadding * 2
+  const mapScale = Math.max(
+    0.2,
+    Math.min(
+      1,
+      (width - VIEWPORT_STAGE_PADDING) / mapWithEffectPadding,
+      (height - VIEWPORT_STAGE_PADDING) / mapWithEffectPadding,
+    ),
   )
+  const displaySize = MAP_WORLD_SIZE * mapScale
 
   return {
-    width: displaySize,
-    height: displaySize,
-    scale: displaySize / MAP_WORLD_SIZE,
+    height,
+    mapScale,
+    mapX: (width - displaySize) / 2,
+    mapY: (height - displaySize) / 2,
+    width,
   }
 }
 
-function useStageSize(containerRef: RefObject<HTMLElement | null>) {
-  const [stageSize, setStageSize] = useState<StageSize>(() => getStageSize())
+function useStageSize(mapEffectPadding: number) {
+  const [stageSize, setStageSize] = useState<StageSize>(() =>
+    getStageSize(mapEffectPadding),
+  )
 
   useEffect(() => {
     const updateStageSize = () => {
-      setStageSize(getStageSize(containerRef.current?.clientWidth))
-    }
-
-    const resizeObserver = new ResizeObserver(updateStageSize)
-
-    if (containerRef.current) {
-      resizeObserver.observe(containerRef.current)
+      setStageSize(getStageSize(mapEffectPadding))
     }
 
     window.addEventListener('resize', updateStageSize)
+    updateStageSize()
 
     return () => {
-      resizeObserver.disconnect()
       window.removeEventListener('resize', updateStageSize)
     }
-  }, [containerRef])
+  }, [mapEffectPadding])
 
   return stageSize
 }
@@ -252,8 +268,11 @@ function App() {
   const selectedMapMetadata = useMapMetadata(selectedMap.metaSrc)
   const mapImage = useLoadedImage(selectedMap.radarSrc)
   const buyZonesOverlayImage = useLoadedImage(selectedMap.buyZonesOverlaySrc)
-  const mapColumnRef = useRef<HTMLElement>(null)
-  const stageSize = useStageSize(mapColumnRef)
+  const mapEffectPadding =
+    selectedMapMetadata.status === 'ready'
+      ? getMaxGrenadeLogicalRadius(selectedMapMetadata.metadata.resolution)
+      : 0
+  const stageSize = useStageSize(mapEffectPadding)
   const drawingLayerRef = useRef<Konva.Layer>(null)
   const activeLineRef = useRef<Konva.Line | null>(null)
   const isDrawingRef = useRef(false)
@@ -273,14 +292,14 @@ function App() {
   )
 
   const brushCursorStyle = useMemo(() => {
-    const brushCursorSize = `${BRUSH_CURSOR_SIZE * stageSize.scale}px`
+    const brushCursorSize = `${BRUSH_CURSOR_SIZE * stageSize.mapScale}px`
 
     return {
       width: brushCursorSize,
       height: brushCursorSize,
       backgroundColor: brushCursorColor,
     }
-  }, [brushCursorColor, stageSize.scale])
+  }, [brushCursorColor, stageSize.mapScale])
 
   const stageClassName =
     selectedTool === 'ink' ? 'map-stage' : 'map-stage map-stage-placement'
@@ -361,10 +380,12 @@ function App() {
       return null
     }
 
-    return {
-      x: pointer.x / stageSize.scale,
-      y: pointer.y / stageSize.scale,
+    const point = {
+      x: (pointer.x - stageSize.mapX) / stageSize.mapScale,
+      y: (pointer.y - stageSize.mapY) / stageSize.mapScale,
     }
+
+    return isMapPointInBounds(point) ? point : null
   }
 
   const updateBrushCursor = useCallback(
@@ -707,7 +728,6 @@ function App() {
       </aside>
 
       <section
-        ref={mapColumnRef}
         className="map-workspace"
         aria-label="Drawable CS2 map"
       >
@@ -719,8 +739,6 @@ function App() {
           <Stage
             width={stageSize.width}
             height={stageSize.height}
-            scaleX={stageSize.scale}
-            scaleY={stageSize.scale}
             onPointerDown={handlePointerDown}
             onPointerMove={handlePointerMove}
             onPointerEnter={updateBrushCursor}
@@ -728,97 +746,128 @@ function App() {
             onPointerUp={finishActiveStroke}
           >
             <Layer listening={false}>
-              {mapImage ? (
-                <Image
-                  image={mapImage}
-                  width={MAP_WORLD_SIZE}
-                  height={MAP_WORLD_SIZE}
-                />
-              ) : (
-                <Text
-                  x={0}
-                  y={MAP_WORLD_SIZE / 2 - 18}
-                  width={MAP_WORLD_SIZE}
-                  align="center"
-                  fill="#f3f6f9"
-                  fontSize={36}
-                  text={`Loading ${selectedMap.name}...`}
-                />
-              )}
+              <Group
+                x={stageSize.mapX}
+                y={stageSize.mapY}
+                scaleX={stageSize.mapScale}
+                scaleY={stageSize.mapScale}
+              >
+                {mapImage ? (
+                  <Image
+                    image={mapImage}
+                    width={MAP_WORLD_SIZE}
+                    height={MAP_WORLD_SIZE}
+                  />
+                ) : (
+                  <Text
+                    x={0}
+                    y={MAP_WORLD_SIZE / 2 - 18}
+                    width={MAP_WORLD_SIZE}
+                    align="center"
+                    fill="#f3f6f9"
+                    fontSize={36}
+                    text={`Loading ${selectedMap.name}...`}
+                  />
+                )}
+              </Group>
             </Layer>
-            {/* @ink:konva React-Konva z-order follows render order; active ink must stay above committed annotations to avoid stroke pop on mouseup. */}
+            {/* @ink:konva Fullscreen stage uses map-local groups; active ink must stay above committed annotations to avoid stroke pop on mouseup. */}
             <Layer listening={false}>
-              {showBuyZones && buyZonesOverlayImage ? (
-                <Image
-                  image={buyZonesOverlayImage}
-                  width={MAP_WORLD_SIZE}
-                  height={MAP_WORLD_SIZE}
-                />
-              ) : null}
+              <Group
+                x={stageSize.mapX}
+                y={stageSize.mapY}
+                scaleX={stageSize.mapScale}
+                scaleY={stageSize.mapScale}
+              >
+                {showBuyZones && buyZonesOverlayImage ? (
+                  <Image
+                    image={buyZonesOverlayImage}
+                    width={MAP_WORLD_SIZE}
+                    height={MAP_WORLD_SIZE}
+                  />
+                ) : null}
+              </Group>
             </Layer>
             <Layer listening={false}>
-              {selectedMapHistory.annotations.map((annotation) => {
-                if (annotation.kind === 'stroke') {
-                  return (
-                    <Line
-                      key={annotation.id}
-                      points={annotation.points}
-                      stroke={annotation.color}
-                      strokeWidth={BRUSH_SIZE}
-                      lineCap="round"
-                      lineJoin="round"
-                      tension={0.35}
-                    />
-                  )
-                }
-
-                const effect = GRENADE_EFFECTS[annotation.grenadeType]
-                const radius =
-                  selectedMapMetadata.status === 'ready'
-                    ? getGrenadeLogicalRadius(
-                        annotation.grenadeType,
-                        selectedMapMetadata.metadata.resolution,
-                      )
-                    : null
-
-                return (
-                  <Group key={annotation.id} x={annotation.x} y={annotation.y}>
-                    {radius !== null ? (
-                      <Circle
-                        radius={radius}
-                        fill={effect.fill}
-                        stroke={effect.stroke}
-                        strokeWidth={3}
-                        dash={
-                          annotation.grenadeType === 'flash'
-                            ? [18, 10]
-                            : undefined
-                        }
+              <Group
+                x={stageSize.mapX}
+                y={stageSize.mapY}
+                scaleX={stageSize.mapScale}
+                scaleY={stageSize.mapScale}
+              >
+                {selectedMapHistory.annotations.map((annotation) => {
+                  if (annotation.kind === 'stroke') {
+                    return (
+                      <Line
+                        key={annotation.id}
+                        points={annotation.points}
+                        stroke={annotation.color}
+                        strokeWidth={BRUSH_SIZE}
+                        lineCap="round"
+                        lineJoin="round"
+                        tension={0.35}
                       />
-                    ) : null}
-                    <Circle
-                      radius={13}
-                      fill={effect.stroke}
-                      stroke="#0f172a"
-                      strokeWidth={3}
-                    />
-                    <Text
-                      x={-8}
-                      y={-8}
-                      width={16}
-                      height={16}
-                      align="center"
-                      verticalAlign="middle"
-                      fill="#0f172a"
-                      fontSize={13}
-                      fontStyle="bold"
-                      text={effect.symbol}
-                    />
-                  </Group>
-                )
-              })}
+                    )
+                  }
+
+                  const effect = GRENADE_EFFECTS[annotation.grenadeType]
+                  const radius =
+                    selectedMapMetadata.status === 'ready'
+                      ? getGrenadeLogicalRadius(
+                          annotation.grenadeType,
+                          selectedMapMetadata.metadata.resolution,
+                        )
+                      : null
+
+                  return (
+                    <Group
+                      key={annotation.id}
+                      x={annotation.x}
+                      y={annotation.y}
+                    >
+                      {radius !== null ? (
+                        <Circle
+                          radius={radius}
+                          fill={effect.fill}
+                          stroke={effect.stroke}
+                          strokeWidth={3}
+                          dash={
+                            annotation.grenadeType === 'flash'
+                              ? [18, 10]
+                              : undefined
+                          }
+                        />
+                      ) : null}
+                      <Circle
+                        radius={13}
+                        fill={effect.stroke}
+                        stroke="#0f172a"
+                        strokeWidth={3}
+                      />
+                      <Text
+                        x={-8}
+                        y={-8}
+                        width={16}
+                        height={16}
+                        align="center"
+                        verticalAlign="middle"
+                        fill="#0f172a"
+                        fontSize={13}
+                        fontStyle="bold"
+                        text={effect.symbol}
+                      />
+                    </Group>
+                  )
+                })}
+              </Group>
             </Layer>
-            <Layer ref={drawingLayerRef} />
+            <Layer
+              ref={drawingLayerRef}
+              x={stageSize.mapX}
+              y={stageSize.mapY}
+              scaleX={stageSize.mapScale}
+              scaleY={stageSize.mapScale}
+            />
           </Stage>
           <div
             ref={brushCursorRef}

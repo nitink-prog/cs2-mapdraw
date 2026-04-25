@@ -1,18 +1,21 @@
 .app-shell {
+  position: relative;
   display: grid;
   grid-template-columns: minmax(320px, 380px) minmax(640px, 1fr) minmax(320px, 380px);
   gap: 24px;
-  width: max(100%, 1480px);
+  width: 100vw;
   height: 100svh;
   margin: 0 auto;
   padding: 16px;
   box-sizing: border-box;
   grid-auto-rows: minmax(0, 1fr);
-  overflow-x: auto;
-  overflow-y: hidden;
+  overflow: hidden;
+  pointer-events: none;
 }
 
 .side-panel {
+  position: relative;
+  z-index: 2;
   display: flex;
   flex-direction: column;
   gap: 24px;
@@ -28,9 +31,11 @@
     var(--panel);
   box-shadow: 0 24px 80px rgba(0, 0, 0, 0.26);
   overflow: auto;
+  pointer-events: auto;
 }
 
 .general-panel {
+  grid-column: 1;
   overflow: hidden;
 }
 
@@ -241,20 +246,27 @@ button:focus-visible {
 }
 
 .map-workspace {
+  position: fixed;
+  z-index: 0;
+  inset: 0;
   display: grid;
   place-items: center;
-  min-width: 0;
-  min-height: 0;
-  height: 100%;
+  width: 100vw;
+  height: 100svh;
   box-sizing: border-box;
   overflow: hidden;
+  pointer-events: auto;
 }
 
 .map-stage {
-  position: relative;
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100svh;
   overflow: hidden;
   cursor: none;
   touch-action: none;
+  z-index: 0;
 }
 
 .map-stage canvas {
@@ -279,6 +291,7 @@ button:focus-visible {
 }
 
 .tools-panel {
+  grid-column: 3;
   justify-content: flex-start;
 }
 

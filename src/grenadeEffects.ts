@@ -31,3 +31,11 @@ export function getGrenadeLogicalRadius(
   // @ink:contract meta.json5 resolution is game units per one pixel of the 1024 radar image; do not apply stage scale here.
   return GRENADE_EFFECTS[grenadeType].radiusGameUnits / mapResolution
 }
+
+export function getMaxGrenadeLogicalRadius(mapResolution: number) {
+  return Math.max(
+    ...Object.keys(GRENADE_EFFECTS).map((grenadeType) =>
+      getGrenadeLogicalRadius(grenadeType as GrenadeType, mapResolution),
+    ),
+  )
+}
