@@ -31,6 +31,7 @@ const SIDE_BRUSH_COLORS = {
 } as const
 const BRUSH_SIZE = 3
 const BRUSH_CURSOR_SIZE = 7
+const OUT_OF_BOUNDS_CURSOR_COLOR = '#ef4444'
 const VIEWPORT_STAGE_PADDING = 32
 
 type BrushColor = (typeof SIDE_BRUSH_COLORS)[keyof typeof SIDE_BRUSH_COLORS]
@@ -411,12 +412,20 @@ function App() {
         return
       }
 
+      const logicalPoint = {
+        x: (pointer.x - stageSize.mapX) / stageSize.mapScale,
+        y: (pointer.y - stageSize.mapY) / stageSize.mapScale,
+      }
+      const cursorColor = isMapPointInBounds(logicalPoint)
+        ? brushColor
+        : OUT_OF_BOUNDS_CURSOR_COLOR
+
       // @ink:konva Keep the custom cursor on the DOM layer and update it by ref so pointermove drawing stays off React state.
       brushCursor.style.opacity = '1'
-      brushCursor.style.backgroundColor = brushColor
+      brushCursor.style.backgroundColor = cursorColor
       brushCursor.style.transform = `translate(${pointer.x}px, ${pointer.y}px) translate(-50%, -50%)`
     },
-    [selectedTool],
+    [selectedTool, stageSize.mapScale, stageSize.mapX, stageSize.mapY],
   )
 
   const hideBrushCursor = useCallback(() => {
