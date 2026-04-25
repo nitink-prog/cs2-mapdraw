@@ -18,6 +18,7 @@ export type GameMap = {
   name: string
   badgeSrc: string
   buyZonesOverlaySrc: string
+  metaSrc: string
   radarSrc: string
 }
 
@@ -47,6 +48,7 @@ export const GAME_MAPS: GameMap[] = MAP_IDS.map((id) => ({
   name: formatMapName(id),
   badgeSrc: getPublicAssetUrl(`/maps/${id}/badge.png`),
   buyZonesOverlaySrc: getPublicAssetUrl(`/maps/${id}/overlay_buyzones.png`),
+  metaSrc: getPublicAssetUrl(`/maps/${id}/meta.json5`),
   radarSrc: getPublicAssetUrl(`/maps/${id}/radar.png`),
 }))
 

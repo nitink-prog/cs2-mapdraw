@@ -251,6 +251,11 @@ button:focus-visible {
   cursor: none;
 }
 
+.map-stage-placement,
+.map-stage-placement canvas {
+  cursor: crosshair;
+}
+
 .brush-cursor {
   position: absolute;
   top: 0;
@@ -265,6 +270,40 @@ button:focus-visible {
 
 .tools-panel {
   justify-content: flex-start;
+}
+
+.tool-group {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.tool-button-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.tool-button {
+  border-radius: 16px;
+  padding: 12px 10px;
+  font-weight: 700;
+}
+
+.tool-button[aria-pressed='true'] {
+  border-color: #22c55e;
+  background: rgba(34, 197, 94, 0.16);
+  box-shadow: 0 0 0 1px rgba(34, 197, 94, 0.32);
+}
+
+.clear-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.metadata-warning {
+  color: #fbbf24;
 }
 
 .mouse-legend {

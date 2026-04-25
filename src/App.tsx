@@ -7,10 +7,16 @@ import {
   useState,
   type RefObject,
 } from 'react'
-import { Image, Layer, Stage, Text } from 'react-konva'
+import { Circle, Group, Image, Layer, Stage, Text } from 'react-konva'
 import type { KonvaEventObject } from 'konva/lib/Node'
+import {
+  GRENADE_EFFECTS,
+  getGrenadeLogicalRadius,
+  type GrenadeType,
+} from './grenadeEffects'
 import { DEFAULT_MAP_ID, GAME_MAPS, getGameMapById } from './mapCatalog'
 import type { MapId } from './mapCatalog'
+import { useMapMetadata } from './mapMetadata'
 import './App.css'
 
 const MAP_WORLD_SIZE = 1024
@@ -21,6 +27,23 @@ const SIDE_BRUSH_COLORS = {
 const BRUSH_SIZE = 7
 
 type BrushColor = (typeof SIDE_BRUSH_COLORS)[keyof typeof SIDE_BRUSH_COLORS]
+type ToolMode = 'ink' | GrenadeType
+
+type GrenadeMarker = {
+  id: string
+  type: GrenadeType
+  x: number
+  y: number
+}
+
+const TOOL_OPTIONS: {
+  id: ToolMode
+  label: string
+}[] = [
+  { id: 'ink', label: 'Ink' },
+  { id: 'smoke', label: GRENADE_EFFECTS.smoke.label },
+  { id: 'flash', label: GRENADE_EFFECTS.flash.label },
+]
 
 type StageSize = {
   width: number
@@ -92,7 +115,10 @@ function useLoadedImage(src: string) {
 function App() {
   const [selectedMapId, setSelectedMapId] = useState<MapId>(DEFAULT_MAP_ID)
   const [showBuyZones, setShowBuyZones] = useState(true)
+  const [selectedTool, setSelectedTool] = useState<ToolMode>('ink')
+  const [grenadeMarkers, setGrenadeMarkers] = useState<GrenadeMarker[]>([])
   const selectedMap = getGameMapById(selectedMapId)
+  const selectedMapMetadata = useMapMetadata(selectedMap.metaSrc)
   const mapImage = useLoadedImage(selectedMap.radarSrc)
   const buyZonesOverlayImage = useLoadedImage(selectedMap.buyZonesOverlaySrc)
   const mapColumnRef = useRef<HTMLElement>(null)
@@ -100,6 +126,7 @@ function App() {
   const drawingLayerRef = useRef<Konva.Layer>(null)
   const activeLineRef = useRef<Konva.Line | null>(null)
   const isDrawingRef = useRef(false)
+  const grenadeMarkerIdRef = useRef(0)
   const brushCursorRef = useRef<HTMLDivElement>(null)
   const activeBrushColorRef = useRef<BrushColor>(SIDE_BRUSH_COLORS.t)
   const [brushCursorColor, setBrushCursorColor] = useState<BrushColor>(
@@ -123,6 +150,9 @@ function App() {
       backgroundColor: brushCursorColor,
     }
   }, [brushCursorColor, stageSize.scale])
+
+  const stageClassName =
+    selectedTool === 'ink' ? 'map-stage' : 'map-stage map-stage-placement'
 
   const stopDrawing = useCallback(() => {
     isDrawingRef.current = false
@@ -158,11 +188,21 @@ function App() {
       event: KonvaEventObject<PointerEvent>,
       brushColor = activeBrushColorRef.current,
     ) => {
-      const stage = event.target.getStage()
-      const pointer = stage?.getPointerPosition()
       const brushCursor = brushCursorRef.current
 
-      if (!pointer || !brushCursor) {
+      if (!brushCursor) {
+        return
+      }
+
+      if (selectedTool !== 'ink') {
+        brushCursor.style.opacity = '0'
+        return
+      }
+
+      const stage = event.target.getStage()
+      const pointer = stage?.getPointerPosition()
+
+      if (!pointer) {
         return
       }
 
@@ -171,7 +211,7 @@ function App() {
       brushCursor.style.backgroundColor = brushColor
       brushCursor.style.transform = `translate(${pointer.x}px, ${pointer.y}px) translate(-50%, -50%)`
     },
-    [],
+    [selectedTool],
   )
 
   const hideBrushCursor = useCallback(() => {
@@ -181,6 +221,13 @@ function App() {
 
     brushCursorRef.current.style.opacity = '0'
   }, [])
+
+  useEffect(() => {
+    if (selectedTool !== 'ink') {
+      stopDrawing()
+      hideBrushCursor()
+    }
+  }, [hideBrushCursor, selectedTool, stopDrawing])
 
   const getBrushColorForPointerEvent = (
     event: KonvaEventObject<PointerEvent>,
@@ -200,7 +247,41 @@ function App() {
     return null
   }
 
+  const addGrenadeMarker = (
+    grenadeType: GrenadeType,
+    point: { x: number; y: number },
+  ) => {
+    grenadeMarkerIdRef.current += 1
+
+    setGrenadeMarkers((currentMarkers) => [
+      ...currentMarkers,
+      {
+        id: `grenade-${grenadeMarkerIdRef.current}`,
+        type: grenadeType,
+        x: point.x,
+        y: point.y,
+      },
+    ])
+  }
+
   const handlePointerDown = (event: KonvaEventObject<PointerEvent>) => {
+    if (selectedTool !== 'ink') {
+      if (event.evt.pointerType === 'mouse' && event.evt.button !== 0) {
+        return
+      }
+
+      const point = getLogicalPointerPosition(event)
+
+      if (!point) {
+        return
+      }
+
+      event.evt.preventDefault()
+      addGrenadeMarker(selectedTool, point)
+
+      return
+    }
+
     const brushColor = getBrushColorForPointerEvent(event)
 
     if (!brushColor) {
@@ -262,12 +343,17 @@ function App() {
     stopDrawing()
   }
 
+  const clearGrenades = () => {
+    setGrenadeMarkers([])
+  }
+
   const handleMapSelect = (mapId: MapId) => {
     if (mapId === selectedMapId) {
       return
     }
 
     clearDrawing()
+    clearGrenades()
     setSelectedMapId(mapId)
   }
 
@@ -319,7 +405,7 @@ function App() {
         aria-label="Drawable CS2 map"
       >
         <div
-          className="map-stage"
+          className={stageClassName}
           style={stageStyle}
           onContextMenu={(event) => event.preventDefault()}
         >
@@ -353,7 +439,7 @@ function App() {
                 />
               )}
             </Layer>
-            {/* @ink:konva React-Konva z-order follows render order; keep overlays above radar and below user ink. */}
+            {/* @ink:konva React-Konva z-order follows render order; keep map overlays below ink and grenade markers above ink. */}
             <Layer listening={false}>
               {showBuyZones && buyZonesOverlayImage ? (
                 <Image
@@ -364,6 +450,50 @@ function App() {
               ) : null}
             </Layer>
             <Layer ref={drawingLayerRef} />
+            <Layer listening={false}>
+              {grenadeMarkers.map((marker) => {
+                const effect = GRENADE_EFFECTS[marker.type]
+                const radius =
+                  selectedMapMetadata.status === 'ready'
+                    ? getGrenadeLogicalRadius(
+                        marker.type,
+                        selectedMapMetadata.metadata.resolution,
+                      )
+                    : null
+
+                return (
+                  <Group key={marker.id} x={marker.x} y={marker.y}>
+                    {radius !== null ? (
+                      <Circle
+                        radius={radius}
+                        fill={effect.fill}
+                        stroke={effect.stroke}
+                        strokeWidth={3}
+                        dash={marker.type === 'flash' ? [18, 10] : undefined}
+                      />
+                    ) : null}
+                    <Circle
+                      radius={13}
+                      fill={effect.stroke}
+                      stroke="#0f172a"
+                      strokeWidth={3}
+                    />
+                    <Text
+                      x={-8}
+                      y={-8}
+                      width={16}
+                      height={16}
+                      align="center"
+                      verticalAlign="middle"
+                      fill="#0f172a"
+                      fontSize={13}
+                      fontStyle="bold"
+                      text={effect.symbol}
+                    />
+                  </Group>
+                )
+              })}
+            </Layer>
           </Stage>
           <div
             ref={brushCursorRef}
@@ -380,9 +510,43 @@ function App() {
           <h2>Tools</h2>
         </header>
 
-        <button type="button" onClick={clearDrawing}>
-          Clear ink
-        </button>
+        <section className="tool-group" aria-label="Annotation tools">
+          <div className="tool-button-grid">
+            {TOOL_OPTIONS.map((tool) => (
+              <button
+                key={tool.id}
+                type="button"
+                className="tool-button"
+                aria-pressed={selectedTool === tool.id}
+                onClick={() => setSelectedTool(tool.id)}
+              >
+                {tool.label}
+              </button>
+            ))}
+          </div>
+          <p className="panel-copy">
+            Smoke radius is {GRENADE_EFFECTS.smoke.radiusGameUnits}u. Flash is
+            a {GRENADE_EFFECTS.flash.radiusGameUnits}u reference radius; real
+            flashes also depend on line of sight and view angle.
+          </p>
+          {selectedMapMetadata.status === 'loading' ? (
+            <p className="panel-copy">Loading map scale...</p>
+          ) : null}
+          {selectedMapMetadata.status === 'error' ? (
+            <p className="panel-copy metadata-warning">
+              Map metadata failed to load; grenade radii are hidden.
+            </p>
+          ) : null}
+        </section>
+
+        <div className="clear-actions">
+          <button type="button" onClick={clearDrawing}>
+            Clear ink
+          </button>
+          <button type="button" onClick={clearGrenades}>
+            Clear grenades
+          </button>
+        </div>
         <div className="mouse-legend" aria-label="Mouse button drawing colors">
           <span
             className="mouse-legend-color mouse-legend-color-t"
