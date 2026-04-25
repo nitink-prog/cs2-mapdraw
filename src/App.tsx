@@ -33,6 +33,10 @@ const BRUSH_SIZE = 3
 const BRUSH_CURSOR_SIZE = 7
 const OUT_OF_BOUNDS_CURSOR_COLOR = '#ef4444'
 const VIEWPORT_STAGE_PADDING = 32
+const MIN_MANUAL_ZOOM = 1
+const MAX_MANUAL_ZOOM = 5
+const ZOOM_BUTTON_STEP = 0.25
+const WHEEL_ZOOM_FACTOR = 1.08
 
 type BrushColor = (typeof SIDE_BRUSH_COLORS)[keyof typeof SIDE_BRUSH_COLORS]
 type ToolMode = 'ink' | GrenadeType
@@ -73,6 +77,22 @@ type AnnotationHistory = {
   annotations: Annotation[]
   redoStack: HistoryAction[]
   undoStack: HistoryAction[]
+}
+
+type Point = {
+  x: number
+  y: number
+}
+
+type MapViewTransform = {
+  scale: number
+  x: number
+  y: number
+}
+
+type PanGesture = {
+  panStart: Point
+  pointerStart: Point
 }
 
 const UTILITY_TOOL_OPTIONS: {
@@ -143,6 +163,35 @@ function isMapPointInBounds(point: { x: number; y: number }) {
     point.y >= 0 &&
     point.y <= MAP_WORLD_SIZE
   )
+}
+
+function clampZoom(zoom: number, maxZoom = MAX_MANUAL_ZOOM) {
+  return Math.min(maxZoom, Math.max(MIN_MANUAL_ZOOM, zoom))
+}
+
+function getMapPointFromStagePoint(
+  stagePoint: Point,
+  mapView: MapViewTransform,
+) {
+  return {
+    x: (stagePoint.x - mapView.x) / mapView.scale,
+    y: (stagePoint.y - mapView.y) / mapView.scale,
+  }
+}
+
+function getPanForZoomAtStagePoint(
+  stagePoint: Point,
+  oldMapView: MapViewTransform,
+  nextZoom: number,
+  stageSize: StageSize,
+) {
+  const mapPoint = getMapPointFromStagePoint(stagePoint, oldMapView)
+  const nextScale = stageSize.mapScale * nextZoom
+
+  return {
+    x: stagePoint.x - stageSize.mapX - mapPoint.x * nextScale,
+    y: stagePoint.y - stageSize.mapY - mapPoint.y * nextScale,
+  }
 }
 
 function applyHistoryAction(annotations: Annotation[], action: HistoryAction) {
@@ -256,6 +305,9 @@ function App() {
   const [selectedMapId, setSelectedMapId] = useState<MapId>(DEFAULT_MAP_ID)
   const [showBuyZones, setShowBuyZones] = useState(true)
   const [selectedTool, setSelectedTool] = useState<ToolMode>('ink')
+  const [isAutoZoom, setIsAutoZoom] = useState(true)
+  const [userZoom, setUserZoom] = useState(1)
+  const [pan, setPan] = useState<Point>({ x: 0, y: 0 })
   const [annotationHistories, setAnnotationHistories] = useState<
     Partial<Record<MapId, AnnotationHistory>>
   >({})
@@ -274,9 +326,30 @@ function App() {
       ? getMaxGrenadeLogicalRadius(selectedMapMetadata.metadata.resolution)
       : 0
   const stageSize = useStageSize(mapEffectPadding)
+  const maxUserZoom = MAX_MANUAL_ZOOM / stageSize.mapScale
+  const effectiveUserZoom = isAutoZoom ? 1 : clampZoom(userZoom, maxUserZoom)
+  // @ink:konva Annotations stay in 0..1024 map coordinates; mapView is the only place zoom/pan enters render and pointer math.
+  const mapView = useMemo<MapViewTransform>(
+    () => ({
+      scale: stageSize.mapScale * effectiveUserZoom,
+      x: stageSize.mapX + (isAutoZoom ? 0 : pan.x),
+      y: stageSize.mapY + (isAutoZoom ? 0 : pan.y),
+    }),
+    [
+      effectiveUserZoom,
+      isAutoZoom,
+      pan.x,
+      pan.y,
+      stageSize.mapScale,
+      stageSize.mapX,
+      stageSize.mapY,
+    ],
+  )
+  const zoomPercent = Math.round(mapView.scale * 100)
   const drawingLayerRef = useRef<Konva.Layer>(null)
   const activeLineRef = useRef<Konva.Line | null>(null)
   const isDrawingRef = useRef(false)
+  const panGestureRef = useRef<PanGesture | null>(null)
   const annotationIdRef = useRef(0)
   const brushCursorRef = useRef<HTMLDivElement>(null)
   const activeBrushColorRef = useRef<BrushColor>(SIDE_BRUSH_COLORS.t)
@@ -293,14 +366,14 @@ function App() {
   )
 
   const brushCursorStyle = useMemo(() => {
-    const brushCursorSize = `${BRUSH_CURSOR_SIZE * stageSize.mapScale}px`
+    const brushCursorSize = `${BRUSH_CURSOR_SIZE * mapView.scale}px`
 
     return {
       width: brushCursorSize,
       height: brushCursorSize,
       backgroundColor: brushCursorColor,
     }
-  }, [brushCursorColor, stageSize.mapScale])
+  }, [brushCursorColor, mapView.scale])
 
   const stageClassName =
     selectedTool === 'ink' ? 'map-stage' : 'map-stage map-stage-placement'
@@ -363,15 +436,24 @@ function App() {
     })
   }, [getNextAnnotationId, pushHistoryAction, selectedMapId])
 
+  const stopPanGesture = useCallback(() => {
+    panGestureRef.current = null
+  }, [])
+
   useEffect(() => {
-    window.addEventListener('pointerup', finishActiveStroke)
-    window.addEventListener('pointercancel', finishActiveStroke)
+    const handlePointerEnd = () => {
+      finishActiveStroke()
+      stopPanGesture()
+    }
+
+    window.addEventListener('pointerup', handlePointerEnd)
+    window.addEventListener('pointercancel', handlePointerEnd)
 
     return () => {
-      window.removeEventListener('pointerup', finishActiveStroke)
-      window.removeEventListener('pointercancel', finishActiveStroke)
+      window.removeEventListener('pointerup', handlePointerEnd)
+      window.removeEventListener('pointercancel', handlePointerEnd)
     }
-  }, [finishActiveStroke])
+  }, [finishActiveStroke, stopPanGesture])
 
   const getLogicalPointerPosition = (event: KonvaEventObject<PointerEvent>) => {
     const stage = event.target.getStage()
@@ -381,10 +463,7 @@ function App() {
       return null
     }
 
-    const point = {
-      x: (pointer.x - stageSize.mapX) / stageSize.mapScale,
-      y: (pointer.y - stageSize.mapY) / stageSize.mapScale,
-    }
+    const point = getMapPointFromStagePoint(pointer, mapView)
 
     return isMapPointInBounds(point) ? point : null
   }
@@ -412,10 +491,7 @@ function App() {
         return
       }
 
-      const logicalPoint = {
-        x: (pointer.x - stageSize.mapX) / stageSize.mapScale,
-        y: (pointer.y - stageSize.mapY) / stageSize.mapScale,
-      }
+      const logicalPoint = getMapPointFromStagePoint(pointer, mapView)
       const cursorColor = isMapPointInBounds(logicalPoint)
         ? brushColor
         : OUT_OF_BOUNDS_CURSOR_COLOR
@@ -425,7 +501,7 @@ function App() {
       brushCursor.style.backgroundColor = cursorColor
       brushCursor.style.transform = `translate(${pointer.x}px, ${pointer.y}px) translate(-50%, -50%)`
     },
-    [selectedTool, stageSize.mapScale, stageSize.mapX, stageSize.mapY],
+    [mapView, selectedTool],
   )
 
   const hideBrushCursor = useCallback(() => {
@@ -478,6 +554,26 @@ function App() {
   }
 
   const handlePointerDown = (event: KonvaEventObject<PointerEvent>) => {
+    if (event.evt.pointerType === 'mouse' && event.evt.button === 1) {
+      const stage = event.target.getStage()
+      const pointer = stage?.getPointerPosition()
+
+      if (!pointer) {
+        return
+      }
+
+      event.evt.preventDefault()
+      finishActiveStroke()
+      hideBrushCursor()
+      setIsAutoZoom(false)
+      setUserZoom(effectiveUserZoom)
+      panGestureRef.current = {
+        panStart: isAutoZoom ? { x: 0, y: 0 } : pan,
+        pointerStart: pointer,
+      }
+      return
+    }
+
     if (selectedTool !== 'ink') {
       if (event.evt.pointerType === 'mouse' && event.evt.button !== 0) {
         return
@@ -531,6 +627,24 @@ function App() {
   }
 
   const handlePointerMove = (event: KonvaEventObject<PointerEvent>) => {
+    const panGesture = panGestureRef.current
+
+    if (panGesture) {
+      const stage = event.target.getStage()
+      const pointer = stage?.getPointerPosition()
+
+      if (!pointer) {
+        return
+      }
+
+      event.evt.preventDefault()
+      setPan({
+        x: panGesture.panStart.x + pointer.x - panGesture.pointerStart.x,
+        y: panGesture.panStart.y + pointer.y - panGesture.pointerStart.y,
+      })
+      return
+    }
+
     updateBrushCursor(event)
 
     if (!isDrawingRef.current || !activeLineRef.current) {
@@ -548,6 +662,11 @@ function App() {
     const line = activeLineRef.current
     line.points(line.points().concat([point.x, point.y]))
     drawingLayerRef.current?.batchDraw()
+  }
+
+  const handlePointerUp = () => {
+    finishActiveStroke()
+    stopPanGesture()
   }
 
   const removeCurrentMapAnnotations = (
@@ -571,6 +690,70 @@ function App() {
       kind: 'remove',
       removedAnnotations,
     })
+  }
+
+  const setManualZoomAtStagePoint = useCallback(
+    (nextZoom: number, stagePoint: Point) => {
+      const clampedZoom = clampZoom(nextZoom, maxUserZoom)
+
+      setIsAutoZoom(false)
+      setUserZoom(clampedZoom)
+      setPan(
+        getPanForZoomAtStagePoint(stagePoint, mapView, clampedZoom, stageSize),
+      )
+    },
+    [mapView, maxUserZoom, stageSize],
+  )
+
+  const changeZoomByPercent = (delta: number) => {
+    const nextScale = Math.min(
+      MAX_MANUAL_ZOOM,
+      Math.max(stageSize.mapScale, mapView.scale + delta),
+    )
+    const stageCenter = {
+      x: stageSize.width / 2,
+      y: stageSize.height / 2,
+    }
+
+    setManualZoomAtStagePoint(nextScale / stageSize.mapScale, stageCenter)
+  }
+
+  const handleWheel = (event: KonvaEventObject<WheelEvent>) => {
+    event.evt.preventDefault()
+
+    const stage = event.target.getStage()
+    const pointer = stage?.getPointerPosition()
+
+    if (!pointer) {
+      return
+    }
+
+    const { ctrlKey, deltaMode, deltaX, deltaY } = event.evt
+    const isTrackpadPan =
+      !ctrlKey && (Math.abs(deltaX) > 0 || (deltaMode === 0 && Math.abs(deltaY) < 40))
+
+    if (isTrackpadPan) {
+      finishActiveStroke()
+      setIsAutoZoom(false)
+      setUserZoom(effectiveUserZoom)
+      setPan((currentPan) => ({
+        x: (isAutoZoom ? 0 : currentPan.x) - deltaX,
+        y: (isAutoZoom ? 0 : currentPan.y) - deltaY,
+      }))
+      return
+    }
+
+    const zoomDirection = deltaY > 0 ? 1 / WHEEL_ZOOM_FACTOR : WHEEL_ZOOM_FACTOR
+    const nextZoom = effectiveUserZoom * zoomDirection
+
+    finishActiveStroke()
+    setManualZoomAtStagePoint(nextZoom, pointer)
+  }
+
+  const resetAutoZoom = () => {
+    setIsAutoZoom(true)
+    setUserZoom(1)
+    setPan({ x: 0, y: 0 })
   }
 
   const clearDrawing = () => {
@@ -691,6 +874,7 @@ function App() {
     }
 
     finishActiveStroke()
+    resetAutoZoom()
     setSelectedMapId(mapId)
   }
 
@@ -752,14 +936,15 @@ function App() {
             onPointerMove={handlePointerMove}
             onPointerEnter={updateBrushCursor}
             onPointerLeave={hideBrushCursor}
-            onPointerUp={finishActiveStroke}
+            onPointerUp={handlePointerUp}
+            onWheel={handleWheel}
           >
             <Layer listening={false}>
               <Group
-                x={stageSize.mapX}
-                y={stageSize.mapY}
-                scaleX={stageSize.mapScale}
-                scaleY={stageSize.mapScale}
+                x={mapView.x}
+                y={mapView.y}
+                scaleX={mapView.scale}
+                scaleY={mapView.scale}
               >
                 {mapImage ? (
                   <Image
@@ -783,10 +968,10 @@ function App() {
             {/* @ink:konva Fullscreen stage uses map-local groups; active ink must stay above committed annotations to avoid stroke pop on mouseup. */}
             <Layer listening={false}>
               <Group
-                x={stageSize.mapX}
-                y={stageSize.mapY}
-                scaleX={stageSize.mapScale}
-                scaleY={stageSize.mapScale}
+                x={mapView.x}
+                y={mapView.y}
+                scaleX={mapView.scale}
+                scaleY={mapView.scale}
               >
                 {showBuyZones && buyZonesOverlayImage ? (
                   <Image
@@ -799,10 +984,10 @@ function App() {
             </Layer>
             <Layer listening={false}>
               <Group
-                x={stageSize.mapX}
-                y={stageSize.mapY}
-                scaleX={stageSize.mapScale}
-                scaleY={stageSize.mapScale}
+                x={mapView.x}
+                y={mapView.y}
+                scaleX={mapView.scale}
+                scaleY={mapView.scale}
               >
                 {selectedMapHistory.annotations.map((annotation) => {
                   if (annotation.kind === 'stroke') {
@@ -872,10 +1057,10 @@ function App() {
             </Layer>
             <Layer
               ref={drawingLayerRef}
-              x={stageSize.mapX}
-              y={stageSize.mapY}
-              scaleX={stageSize.mapScale}
-              scaleY={stageSize.mapScale}
+              x={mapView.x}
+              y={mapView.y}
+              scaleX={mapView.scale}
+              scaleY={mapView.scale}
             />
           </Stage>
           <div
@@ -931,6 +1116,30 @@ function App() {
             disabled={!canRedo}
           >
             Redo
+          </button>
+        </div>
+        <div className="zoom-control" aria-label="Map zoom controls">
+          <button
+            type="button"
+            className="zoom-control-button"
+            onClick={() => changeZoomByPercent(-ZOOM_BUTTON_STEP)}
+          >
+            -
+          </button>
+          <button
+            type="button"
+            className="zoom-amount-button"
+            aria-pressed={isAutoZoom}
+            onClick={resetAutoZoom}
+          >
+            {zoomPercent}%
+          </button>
+          <button
+            type="button"
+            className="zoom-control-button"
+            onClick={() => changeZoomByPercent(ZOOM_BUTTON_STEP)}
+          >
+            +
           </button>
         </div>
         <section className="tool-picker-section" aria-label="Drawing tools">

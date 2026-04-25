@@ -317,6 +317,33 @@ button:focus-visible {
   gap: 10px;
 }
 
+.zoom-control {
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr) 44px;
+  gap: 10px;
+}
+
+.zoom-control-button,
+.zoom-amount-button {
+  min-height: 40px;
+  padding: 8px 10px;
+  font-weight: 800;
+}
+
+.zoom-control-button {
+  font-size: 18px;
+  line-height: 1;
+}
+
+.zoom-amount-button {
+  border-color: rgba(255, 255, 255, 0.14);
+}
+
+.zoom-amount-button[aria-pressed='true'] {
+  border-color: #38bdf8;
+  box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.34);
+}
+
 .metadata-warning {
   color: #fbbf24;
 }
