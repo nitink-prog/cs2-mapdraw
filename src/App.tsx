@@ -14,7 +14,10 @@ import type { MapId } from './mapCatalog'
 import './App.css'
 
 const MAP_WORLD_SIZE = 1024
-const BRUSH_COLOR = '#ff3b30'
+const SIDE_BRUSH_COLORS = {
+  t: '#FDAC1A',
+  ct: '#1c3bec',
+} as const
 const BRUSH_SIZE = 7
 
 type StageSize = {
@@ -131,10 +134,30 @@ function App() {
     }
   }
 
+  const getBrushColorForPointerEvent = (event: KonvaEventObject<PointerEvent>) => {
+    if (event.evt.pointerType !== 'mouse') {
+      return SIDE_BRUSH_COLORS.t
+    }
+
+    if (event.evt.button === 0) {
+      return SIDE_BRUSH_COLORS.t
+    }
+
+    if (event.evt.button === 2) {
+      return SIDE_BRUSH_COLORS.ct
+    }
+
+    return null
+  }
+
   const handlePointerDown = (event: KonvaEventObject<PointerEvent>) => {
-    if (event.evt.pointerType === 'mouse' && event.evt.button !== 0) {
+    const brushColor = getBrushColorForPointerEvent(event)
+
+    if (!brushColor) {
       return
     }
+
+    event.evt.preventDefault()
 
     const point = getLogicalPointerPosition(event)
     const drawingLayer = drawingLayerRef.current
@@ -147,7 +170,7 @@ function App() {
 
     const line = new Konva.Line({
       points: [point.x, point.y, point.x, point.y],
-      stroke: BRUSH_COLOR,
+      stroke: brushColor,
       strokeWidth: BRUSH_SIZE,
       lineCap: 'round',
       lineJoin: 'round',
@@ -228,7 +251,11 @@ function App() {
         className="map-workspace"
         aria-label="Drawable CS2 map"
       >
-        <div className="map-stage" style={stageStyle}>
+        <div
+          className="map-stage"
+          style={stageStyle}
+          onContextMenu={(event) => event.preventDefault()}
+        >
           <Stage
             width={stageSize.width}
             height={stageSize.height}
@@ -271,7 +298,47 @@ function App() {
         <button type="button" onClick={clearDrawing}>
           Clear ink
         </button>
-        <p className="panel-copy">Hold the left mouse button and drag to draw.</p>
+        <div className="mouse-legend" aria-label="Mouse button drawing colors">
+          <span
+            className="mouse-legend-color mouse-legend-color-t"
+            aria-label="Left click draws T-side orange"
+          />
+          <svg
+            className="mouse-legend-icon"
+            viewBox="0 0 64 96"
+            role="img"
+            aria-label="Mouse button guide"
+          >
+            <path
+              className="mouse-legend-shell"
+              d="M32 4C17.64 4 6 15.64 6 30v36c0 14.36 11.64 26 26 26s26-11.64 26-26V30C58 15.64 46.36 4 32 4Z"
+            />
+            <path
+              className="mouse-legend-button mouse-legend-button-left"
+              d="M32 4C17.64 4 6 15.64 6 30v8h26V4Z"
+            />
+            <path
+              className="mouse-legend-button mouse-legend-button-right"
+              d="M32 4v34h26v-8C58 15.64 46.36 4 32 4Z"
+            />
+            <path className="mouse-legend-divider" d="M32 4v34" />
+            <rect
+              className="mouse-legend-wheel"
+              x="28"
+              y="16"
+              width="8"
+              height="18"
+              rx="4"
+            />
+          </svg>
+          <span
+            className="mouse-legend-color mouse-legend-color-ct"
+            aria-label="Right click draws CT-side blue"
+          />
+        </div>
+        <p className="panel-copy">
+          Left-drag draws T-side orange. Right-drag draws CT-side blue.
+        </p>
       </aside>
     </main>
   )
