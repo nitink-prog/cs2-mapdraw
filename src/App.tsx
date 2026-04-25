@@ -20,6 +20,8 @@ const SIDE_BRUSH_COLORS = {
 } as const
 const BRUSH_SIZE = 7
 
+type BrushColor = (typeof SIDE_BRUSH_COLORS)[keyof typeof SIDE_BRUSH_COLORS]
+
 type StageSize = {
   width: number
   height: number
@@ -96,6 +98,11 @@ function App() {
   const drawingLayerRef = useRef<Konva.Layer>(null)
   const activeLineRef = useRef<Konva.Line | null>(null)
   const isDrawingRef = useRef(false)
+  const brushCursorRef = useRef<HTMLDivElement>(null)
+  const activeBrushColorRef = useRef<BrushColor>(SIDE_BRUSH_COLORS.t)
+  const [brushCursorColor, setBrushCursorColor] = useState<BrushColor>(
+    SIDE_BRUSH_COLORS.t,
+  )
 
   const stageStyle = useMemo(
     () => ({
@@ -104,6 +111,16 @@ function App() {
     }),
     [stageSize.height, stageSize.width],
   )
+
+  const brushCursorStyle = useMemo(() => {
+    const brushCursorSize = `${BRUSH_SIZE * stageSize.scale}px`
+
+    return {
+      width: brushCursorSize,
+      height: brushCursorSize,
+      backgroundColor: brushCursorColor,
+    }
+  }, [brushCursorColor, stageSize.scale])
 
   const stopDrawing = useCallback(() => {
     isDrawingRef.current = false
@@ -134,7 +151,38 @@ function App() {
     }
   }
 
-  const getBrushColorForPointerEvent = (event: KonvaEventObject<PointerEvent>) => {
+  const updateBrushCursor = useCallback(
+    (
+      event: KonvaEventObject<PointerEvent>,
+      brushColor = activeBrushColorRef.current,
+    ) => {
+      const stage = event.target.getStage()
+      const pointer = stage?.getPointerPosition()
+      const brushCursor = brushCursorRef.current
+
+      if (!pointer || !brushCursor) {
+        return
+      }
+
+      // @ink:konva Keep the custom cursor on the DOM layer and update it by ref so pointermove drawing stays off React state.
+      brushCursor.style.opacity = '1'
+      brushCursor.style.backgroundColor = brushColor
+      brushCursor.style.transform = `translate(${pointer.x}px, ${pointer.y}px) translate(-50%, -50%)`
+    },
+    [],
+  )
+
+  const hideBrushCursor = useCallback(() => {
+    if (!brushCursorRef.current) {
+      return
+    }
+
+    brushCursorRef.current.style.opacity = '0'
+  }, [])
+
+  const getBrushColorForPointerEvent = (
+    event: KonvaEventObject<PointerEvent>,
+  ): BrushColor | null => {
     if (event.evt.pointerType !== 'mouse') {
       return SIDE_BRUSH_COLORS.t
     }
@@ -157,6 +205,9 @@ function App() {
       return
     }
 
+    activeBrushColorRef.current = brushColor
+    setBrushCursorColor(brushColor)
+    updateBrushCursor(event, brushColor)
     event.evt.preventDefault()
 
     const point = getLogicalPointerPosition(event)
@@ -184,6 +235,8 @@ function App() {
   }
 
   const handlePointerMove = (event: KonvaEventObject<PointerEvent>) => {
+    updateBrushCursor(event)
+
     if (!isDrawingRef.current || !activeLineRef.current) {
       return
     }
@@ -263,6 +316,8 @@ function App() {
             scaleY={stageSize.scale}
             onPointerDown={handlePointerDown}
             onPointerMove={handlePointerMove}
+            onPointerEnter={updateBrushCursor}
+            onPointerLeave={hideBrushCursor}
             onPointerUp={stopDrawing}
           >
             <Layer listening={false}>
@@ -286,6 +341,12 @@ function App() {
             </Layer>
             <Layer ref={drawingLayerRef} />
           </Stage>
+          <div
+            ref={brushCursorRef}
+            className="brush-cursor"
+            style={brushCursorStyle}
+            aria-hidden="true"
+          />
         </div>
       </section>
 
