@@ -558,60 +558,66 @@ function App() {
             Clear grenades
           </button>
         </div>
-        <div className="mouse-legend" aria-label="Mouse button drawing colors">
-          <span
-            className="mouse-legend-color mouse-legend-color-t"
-            aria-label="Left click draws T-side orange"
-          />
-          <svg
-            className="mouse-legend-icon"
-            viewBox="0 0 64 96"
-            role="img"
-            aria-label="Mouse button guide"
+        <section className="tool-picker-section" aria-label="Drawing tools">
+          <button
+            type="button"
+            className="mouse-legend ink-tool-button"
+            aria-label="Use ink tool. Left-drag draws T-side orange. Right-drag draws CT-side blue."
+            aria-pressed={selectedTool === 'ink'}
+            onClick={() => setSelectedTool('ink')}
           >
-            <path
-              className="mouse-legend-shell"
-              d="M32 4C17.64 4 6 15.64 6 30v36c0 14.36 11.64 26 26 26s26-11.64 26-26V30C58 15.64 46.36 4 32 4Z"
+            <span className="ink-tool-label">Ink</span>
+            <span
+              className="mouse-legend-color mouse-legend-color-t"
+              aria-hidden="true"
             />
-            <path
-              className="mouse-legend-button mouse-legend-button-left"
-              d="M32 4C17.64 4 6 15.64 6 30v8h26V4Z"
-            />
-            <path
-              className="mouse-legend-button mouse-legend-button-right"
-              d="M32 4v34h26v-8C58 15.64 46.36 4 32 4Z"
-            />
-            <path className="mouse-legend-divider" d="M32 4v34" />
-            <rect
-              className="mouse-legend-wheel"
-              x="28"
-              y="16"
-              width="8"
-              height="18"
-              rx="4"
-            />
-          </svg>
-          <span
-            className="mouse-legend-color mouse-legend-color-ct"
-            aria-label="Right click draws CT-side blue"
-          />
-        </div>
-        <p className="panel-copy">
-          Left-drag draws T-side orange. Right-drag draws CT-side blue.
-        </p>
-        <section className="utility-tool-section" aria-label="Utility tools">
-          {UTILITY_TOOL_OPTIONS.map((tool) => (
-            <button
-              key={tool.id}
-              type="button"
-              className="utility-tool-button"
-              aria-pressed={selectedTool === tool.id}
-              onClick={() => handleUtilityToolSelect(tool.id)}
+            <svg
+              className="mouse-legend-icon"
+              viewBox="0 0 64 96"
+              role="img"
+              aria-label="Mouse button guide"
             >
-              <img src={tool.iconSrc} alt="" className="utility-tool-icon" />
-              <span>{tool.label}</span>
-            </button>
-          ))}
+              <path
+                className="mouse-legend-shell"
+                d="M32 4C17.64 4 6 15.64 6 30v36c0 14.36 11.64 26 26 26s26-11.64 26-26V30C58 15.64 46.36 4 32 4Z"
+              />
+              <path
+                className="mouse-legend-button mouse-legend-button-left"
+                d="M32 4C17.64 4 6 15.64 6 30v8h26V4Z"
+              />
+              <path
+                className="mouse-legend-button mouse-legend-button-right"
+                d="M32 4v34h26v-8C58 15.64 46.36 4 32 4Z"
+              />
+              <path className="mouse-legend-divider" d="M32 4v34" />
+              <rect
+                className="mouse-legend-wheel"
+                x="28"
+                y="16"
+                width="8"
+                height="18"
+                rx="4"
+              />
+            </svg>
+            <span
+              className="mouse-legend-color mouse-legend-color-ct"
+              aria-hidden="true"
+            />
+          </button>
+          <div className="utility-tool-grid">
+            {UTILITY_TOOL_OPTIONS.map((tool) => (
+              <button
+                key={tool.id}
+                type="button"
+                className="utility-tool-button"
+                aria-pressed={selectedTool === tool.id}
+                onClick={() => handleUtilityToolSelect(tool.id)}
+              >
+                <img src={tool.iconSrc} alt="" className="utility-tool-icon" />
+                <span>{tool.label}</span>
+              </button>
+            ))}
+          </div>
         </section>
       </aside>
     </main>

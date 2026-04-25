@@ -292,25 +292,63 @@ button:focus-visible {
   color: #fbbf24;
 }
 
+.tool-picker-section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: auto;
+  padding-top: 20px;
+  border-top: 1px solid var(--line);
+}
+
 .mouse-legend {
+  position: relative;
   display: grid;
   grid-template-columns: 42px auto 42px;
   align-items: center;
   justify-content: center;
   gap: 14px;
-  margin-top: 6px;
-  padding: 18px;
+  width: 100%;
+  min-height: 58px;
+  padding: 7px 18px;
   border: 1px solid var(--line);
   border-radius: 22px;
   background: rgba(255, 255, 255, 0.035);
+  transition:
+    border-color 160ms ease,
+    background-color 160ms ease,
+    box-shadow 160ms ease,
+    transform 160ms ease;
+}
+
+.mouse-legend:hover {
+  border-color: rgba(255, 255, 255, 0.28);
+  background: rgba(255, 255, 255, 0.085);
+  transform: translateY(-1px);
+}
+
+.mouse-legend[aria-pressed='true'] {
+  border-color: #22c55e;
+  background: rgba(34, 197, 94, 0.16);
+  box-shadow: 0 0 0 1px rgba(34, 197, 94, 0.34);
+}
+
+.ink-tool-label {
+  position: absolute;
+  top: 12px;
+  left: 14px;
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 800;
+  line-height: 1;
 }
 
 .mouse-legend-color {
   display: block;
-  width: 42px;
-  height: 42px;
+  width: 30px;
+  height: 30px;
   border: 1px solid rgba(255, 255, 255, 0.2);
-  border-radius: 12px;
+  border-radius: 10px;
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.24);
 }
 
@@ -323,7 +361,7 @@ button:focus-visible {
 }
 
 .mouse-legend-icon {
-  width: 74px;
+  width: 46px;
   height: auto;
   overflow: visible;
 }
@@ -350,13 +388,10 @@ button:focus-visible {
   stroke-width: 3;
 }
 
-.utility-tool-section {
+.utility-tool-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 10px;
-  margin-top: auto;
-  padding-top: 20px;
-  border-top: 1px solid var(--line);
 }
 
 .utility-tool-button {
