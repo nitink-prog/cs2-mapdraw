@@ -7,7 +7,7 @@ import {
   useState,
   type RefObject,
 } from 'react'
-import { Circle, Group, Image, Layer, Stage, Text } from 'react-konva'
+import { Circle, Group, Image, Layer, Line, Stage, Text } from 'react-konva'
 import type { KonvaEventObject } from 'konva/lib/Node'
 import {
   GRENADE_EFFECTS,
@@ -35,34 +35,138 @@ const BRUSH_CURSOR_SIZE = 7
 type BrushColor = (typeof SIDE_BRUSH_COLORS)[keyof typeof SIDE_BRUSH_COLORS]
 type ToolMode = 'ink' | GrenadeType
 
-type GrenadeMarker = {
+type InkStrokeAnnotation = {
+  color: BrushColor
   id: string
-  type: GrenadeType
+  kind: 'stroke'
+  points: number[]
+}
+
+type GrenadeAnnotation = {
+  grenadeType: GrenadeType
+  id: string
+  kind: 'grenade'
   x: number
   y: number
+}
+
+type Annotation = InkStrokeAnnotation | GrenadeAnnotation
+
+type RemovedAnnotation = {
+  annotation: Annotation
+  index: number
+}
+
+type HistoryAction =
+  | {
+      annotation: Annotation
+      kind: 'add'
+    }
+  | {
+      kind: 'remove'
+      removedAnnotations: RemovedAnnotation[]
+    }
+
+type AnnotationHistory = {
+  annotations: Annotation[]
+  redoStack: HistoryAction[]
+  undoStack: HistoryAction[]
 }
 
 const UTILITY_TOOL_OPTIONS: {
   id: GrenadeType
   iconSrc: string
   label: string
+  shortcut: string
 }[] = [
   {
     id: 'smoke',
     iconSrc: getPublicAssetUrl('/icons/utils/smokegrenade.svg'),
     label: GRENADE_EFFECTS.smoke.label,
+    shortcut: 'A',
   },
   {
     id: 'flash',
     iconSrc: getPublicAssetUrl('/icons/utils/flashbang.svg'),
     label: GRENADE_EFFECTS.flash.label,
+    shortcut: 'S',
   },
   {
     id: 'molotov',
     iconSrc: getPublicAssetUrl('/icons/utils/molotov.svg'),
     label: GRENADE_EFFECTS.molotov.label,
+    shortcut: 'D',
   },
 ]
+
+const TOOL_SHORTCUTS: Record<string, ToolMode> = {
+  a: 'smoke',
+  d: 'molotov',
+  s: 'flash',
+  w: 'ink',
+}
+
+function createEmptyAnnotationHistory(): AnnotationHistory {
+  return {
+    annotations: [],
+    redoStack: [],
+    undoStack: [],
+  }
+}
+
+function getAnnotationHistory(
+  histories: Partial<Record<MapId, AnnotationHistory>>,
+  mapId: MapId,
+) {
+  return histories[mapId] ?? createEmptyAnnotationHistory()
+}
+
+function isEditableKeyboardTarget(target: EventTarget | null) {
+  if (!(target instanceof HTMLElement)) {
+    return false
+  }
+
+  return (
+    target.isContentEditable ||
+    target instanceof HTMLInputElement ||
+    target instanceof HTMLTextAreaElement ||
+    target instanceof HTMLSelectElement
+  )
+}
+
+function applyHistoryAction(annotations: Annotation[], action: HistoryAction) {
+  if (action.kind === 'add') {
+    return [...annotations, action.annotation]
+  }
+
+  const removedIds = new Set(
+    action.removedAnnotations.map(({ annotation }) => annotation.id),
+  )
+
+  return annotations.filter((annotation) => !removedIds.has(annotation.id))
+}
+
+function revertHistoryAction(annotations: Annotation[], action: HistoryAction) {
+  if (action.kind === 'add') {
+    return annotations.filter(
+      (annotation) => annotation.id !== action.annotation.id,
+    )
+  }
+
+  const nextAnnotations = [...annotations]
+
+  for (const removedAnnotation of [...action.removedAnnotations].sort(
+    (left, right) => left.index - right.index,
+  )) {
+    nextAnnotations.splice(
+      removedAnnotation.index,
+      0,
+      removedAnnotation.annotation,
+    )
+  }
+
+  return nextAnnotations
+}
 
 type StageSize = {
   width: number
@@ -135,8 +239,16 @@ function App() {
   const [selectedMapId, setSelectedMapId] = useState<MapId>(DEFAULT_MAP_ID)
   const [showBuyZones, setShowBuyZones] = useState(true)
   const [selectedTool, setSelectedTool] = useState<ToolMode>('ink')
-  const [grenadeMarkers, setGrenadeMarkers] = useState<GrenadeMarker[]>([])
+  const [annotationHistories, setAnnotationHistories] = useState<
+    Partial<Record<MapId, AnnotationHistory>>
+  >({})
   const selectedMap = getGameMapById(selectedMapId)
+  const selectedMapHistory = getAnnotationHistory(
+    annotationHistories,
+    selectedMapId,
+  )
+  const canRedo = selectedMapHistory.redoStack.length > 0
+  const canUndo = selectedMapHistory.undoStack.length > 0
   const selectedMapMetadata = useMapMetadata(selectedMap.metaSrc)
   const mapImage = useLoadedImage(selectedMap.radarSrc)
   const buyZonesOverlayImage = useLoadedImage(selectedMap.buyZonesOverlaySrc)
@@ -145,7 +257,7 @@ function App() {
   const drawingLayerRef = useRef<Konva.Layer>(null)
   const activeLineRef = useRef<Konva.Line | null>(null)
   const isDrawingRef = useRef(false)
-  const grenadeMarkerIdRef = useRef(0)
+  const annotationIdRef = useRef(0)
   const brushCursorRef = useRef<HTMLDivElement>(null)
   const activeBrushColorRef = useRef<BrushColor>(SIDE_BRUSH_COLORS.t)
   const [brushCursorColor, setBrushCursorColor] = useState<BrushColor>(
@@ -173,20 +285,73 @@ function App() {
   const stageClassName =
     selectedTool === 'ink' ? 'map-stage' : 'map-stage map-stage-placement'
 
-  const stopDrawing = useCallback(() => {
-    isDrawingRef.current = false
-    activeLineRef.current = null
+  const getNextAnnotationId = useCallback(() => {
+    annotationIdRef.current += 1
+
+    return `annotation-${annotationIdRef.current}`
   }, [])
 
+  const pushHistoryAction = useCallback(
+    (mapId: MapId, action: HistoryAction) => {
+      setAnnotationHistories((currentHistories) => {
+        const currentHistory = getAnnotationHistory(currentHistories, mapId)
+
+        return {
+          ...currentHistories,
+          [mapId]: {
+            annotations: applyHistoryAction(
+              currentHistory.annotations,
+              action,
+            ),
+            redoStack: [],
+            undoStack: [...currentHistory.undoStack, action],
+          },
+        }
+      })
+    },
+    [],
+  )
+
+  const finishActiveStroke = useCallback(() => {
+    const activeLine = activeLineRef.current
+    const wasDrawing = isDrawingRef.current
+
+    isDrawingRef.current = false
+    activeLineRef.current = null
+
+    if (!activeLine) {
+      return
+    }
+
+    const color = activeLine.stroke() as BrushColor
+    const points = [...activeLine.points()]
+    activeLine.destroy()
+    drawingLayerRef.current?.batchDraw()
+
+    if (!wasDrawing || points.length < 4) {
+      return
+    }
+
+    pushHistoryAction(selectedMapId, {
+      annotation: {
+        color,
+        id: getNextAnnotationId(),
+        kind: 'stroke',
+        points,
+      },
+      kind: 'add',
+    })
+  }, [getNextAnnotationId, pushHistoryAction, selectedMapId])
+
   useEffect(() => {
-    window.addEventListener('pointerup', stopDrawing)
-    window.addEventListener('pointercancel', stopDrawing)
+    window.addEventListener('pointerup', finishActiveStroke)
+    window.addEventListener('pointercancel', finishActiveStroke)
 
     return () => {
-      window.removeEventListener('pointerup', stopDrawing)
-      window.removeEventListener('pointercancel', stopDrawing)
+      window.removeEventListener('pointerup', finishActiveStroke)
+      window.removeEventListener('pointercancel', finishActiveStroke)
     }
-  }, [stopDrawing])
+  }, [finishActiveStroke])
 
   const getLogicalPointerPosition = (event: KonvaEventObject<PointerEvent>) => {
     const stage = event.target.getStage()
@@ -243,10 +408,10 @@ function App() {
 
   useEffect(() => {
     if (selectedTool !== 'ink') {
-      stopDrawing()
+      finishActiveStroke()
       hideBrushCursor()
     }
-  }, [hideBrushCursor, selectedTool, stopDrawing])
+  }, [finishActiveStroke, hideBrushCursor, selectedTool])
 
   const getBrushColorForPointerEvent = (
     event: KonvaEventObject<PointerEvent>,
@@ -270,17 +435,16 @@ function App() {
     grenadeType: GrenadeType,
     point: { x: number; y: number },
   ) => {
-    grenadeMarkerIdRef.current += 1
-
-    setGrenadeMarkers((currentMarkers) => [
-      ...currentMarkers,
-      {
-        id: `grenade-${grenadeMarkerIdRef.current}`,
-        type: grenadeType,
+    pushHistoryAction(selectedMapId, {
+      annotation: {
+        grenadeType,
+        id: getNextAnnotationId(),
+        kind: 'grenade',
         x: point.x,
         y: point.y,
       },
-    ])
+      kind: 'add',
+    })
   }
 
   const handlePointerDown = (event: KonvaEventObject<PointerEvent>) => {
@@ -356,15 +520,134 @@ function App() {
     drawingLayerRef.current?.batchDraw()
   }
 
+  const removeCurrentMapAnnotations = (
+    shouldRemoveAnnotation: (annotation: Annotation) => boolean,
+  ) => {
+    const removedAnnotations = selectedMapHistory.annotations.reduce<
+      RemovedAnnotation[]
+    >((removed, annotation, index) => {
+      if (shouldRemoveAnnotation(annotation)) {
+        removed.push({ annotation, index })
+      }
+
+      return removed
+    }, [])
+
+    if (removedAnnotations.length === 0) {
+      return
+    }
+
+    pushHistoryAction(selectedMapId, {
+      kind: 'remove',
+      removedAnnotations,
+    })
+  }
+
   const clearDrawing = () => {
-    drawingLayerRef.current?.destroyChildren()
-    drawingLayerRef.current?.batchDraw()
-    stopDrawing()
+    finishActiveStroke()
+    removeCurrentMapAnnotations((annotation) => annotation.kind === 'stroke')
   }
 
   const clearGrenades = () => {
-    setGrenadeMarkers([])
+    removeCurrentMapAnnotations((annotation) => annotation.kind === 'grenade')
   }
+
+  const undoCurrentMapAction = useCallback(() => {
+    setAnnotationHistories((currentHistories) => {
+      const currentHistory = getAnnotationHistory(
+        currentHistories,
+        selectedMapId,
+      )
+      const actionToUndo = currentHistory.undoStack.at(-1)
+
+      if (!actionToUndo) {
+        return currentHistories
+      }
+
+      return {
+        ...currentHistories,
+        [selectedMapId]: {
+          annotations: revertHistoryAction(
+            currentHistory.annotations,
+            actionToUndo,
+          ),
+          redoStack: [...currentHistory.redoStack, actionToUndo],
+          undoStack: currentHistory.undoStack.slice(0, -1),
+        },
+      }
+    })
+  }, [selectedMapId])
+
+  const redoCurrentMapAction = useCallback(() => {
+    setAnnotationHistories((currentHistories) => {
+      const currentHistory = getAnnotationHistory(
+        currentHistories,
+        selectedMapId,
+      )
+      const actionToRedo = currentHistory.redoStack.at(-1)
+
+      if (!actionToRedo) {
+        return currentHistories
+      }
+
+      return {
+        ...currentHistories,
+        [selectedMapId]: {
+          annotations: applyHistoryAction(
+            currentHistory.annotations,
+            actionToRedo,
+          ),
+          redoStack: currentHistory.redoStack.slice(0, -1),
+          undoStack: [...currentHistory.undoStack, actionToRedo],
+        },
+      }
+    })
+  }, [selectedMapId])
+
+  useEffect(() => {
+    const handleHistoryKeyboardShortcut = (event: KeyboardEvent) => {
+      if (isEditableKeyboardTarget(event.target)) {
+        return
+      }
+
+      const shortcutKey = event.key.toLowerCase()
+
+      if (event.metaKey || event.ctrlKey) {
+        if (shortcutKey !== 'z') {
+          return
+        }
+
+        event.preventDefault()
+
+        if (event.shiftKey) {
+          redoCurrentMapAction()
+          return
+        }
+
+        undoCurrentMapAction()
+        return
+      }
+
+      if (event.altKey) {
+        return
+      }
+
+      const nextTool = TOOL_SHORTCUTS[shortcutKey]
+
+      if (!nextTool) {
+        return
+      }
+
+      event.preventDefault()
+      setSelectedTool(nextTool)
+    }
+
+    window.addEventListener('keydown', handleHistoryKeyboardShortcut)
+
+    return () => {
+      window.removeEventListener('keydown', handleHistoryKeyboardShortcut)
+    }
+  }, [redoCurrentMapAction, undoCurrentMapAction])
 
   const handleUtilityToolSelect = (utilityType: GrenadeType) => {
     setSelectedTool((currentTool) =>
@@ -377,8 +660,7 @@ function App() {
       return
     }
 
-    clearDrawing()
-    clearGrenades()
+    finishActiveStroke()
     setSelectedMapId(mapId)
   }
 
@@ -443,7 +725,7 @@ function App() {
             onPointerMove={handlePointerMove}
             onPointerEnter={updateBrushCursor}
             onPointerLeave={hideBrushCursor}
-            onPointerUp={stopDrawing}
+            onPointerUp={finishActiveStroke}
           >
             <Layer listening={false}>
               {mapImage ? (
@@ -464,7 +746,7 @@ function App() {
                 />
               )}
             </Layer>
-            {/* @ink:konva React-Konva z-order follows render order; keep map overlays below ink and grenade markers above ink. */}
+            {/* @ink:konva React-Konva z-order follows render order; active ink must stay above committed annotations to avoid stroke pop on mouseup. */}
             <Layer listening={false}>
               {showBuyZones && buyZonesOverlayImage ? (
                 <Image
@@ -474,27 +756,44 @@ function App() {
                 />
               ) : null}
             </Layer>
-            <Layer ref={drawingLayerRef} />
             <Layer listening={false}>
-              {grenadeMarkers.map((marker) => {
-                const effect = GRENADE_EFFECTS[marker.type]
+              {selectedMapHistory.annotations.map((annotation) => {
+                if (annotation.kind === 'stroke') {
+                  return (
+                    <Line
+                      key={annotation.id}
+                      points={annotation.points}
+                      stroke={annotation.color}
+                      strokeWidth={BRUSH_SIZE}
+                      lineCap="round"
+                      lineJoin="round"
+                      tension={0.35}
+                    />
+                  )
+                }
+
+                const effect = GRENADE_EFFECTS[annotation.grenadeType]
                 const radius =
                   selectedMapMetadata.status === 'ready'
                     ? getGrenadeLogicalRadius(
-                        marker.type,
+                        annotation.grenadeType,
                         selectedMapMetadata.metadata.resolution,
                       )
                     : null
 
                 return (
-                  <Group key={marker.id} x={marker.x} y={marker.y}>
+                  <Group key={annotation.id} x={annotation.x} y={annotation.y}>
                     {radius !== null ? (
                       <Circle
                         radius={radius}
                         fill={effect.fill}
                         stroke={effect.stroke}
                         strokeWidth={3}
-                        dash={marker.type === 'flash' ? [18, 10] : undefined}
+                        dash={
+                          annotation.grenadeType === 'flash'
+                            ? [18, 10]
+                            : undefined
+                        }
                       />
                     ) : null}
                     <Circle
@@ -519,6 +818,7 @@ function App() {
                 )
               })}
             </Layer>
+            <Layer ref={drawingLayerRef} />
           </Stage>
           <div
             ref={brushCursorRef}
@@ -559,6 +859,22 @@ function App() {
             Clear grenades
           </button>
         </div>
+        <div className="history-actions" aria-label="Map history controls">
+          <button
+            type="button"
+            onClick={undoCurrentMapAction}
+            disabled={!canUndo}
+          >
+            Undo
+          </button>
+          <button
+            type="button"
+            onClick={redoCurrentMapAction}
+            disabled={!canRedo}
+          >
+            Redo
+          </button>
+        </div>
         <section className="tool-picker-section" aria-label="Drawing tools">
           <button
             type="button"
@@ -567,7 +883,9 @@ function App() {
             aria-pressed={selectedTool === 'ink'}
             onClick={() => setSelectedTool('ink')}
           >
-            <span className="ink-tool-label">Ink</span>
+            <span className="ink-tool-label">
+              Ink <kbd className="tool-shortcut-hint">W</kbd>
+            </span>
             <span
               className="mouse-legend-color mouse-legend-color-t"
               aria-hidden="true"
@@ -615,7 +933,10 @@ function App() {
                 onClick={() => handleUtilityToolSelect(tool.id)}
               >
                 <img src={tool.iconSrc} alt="" className="utility-tool-icon" />
-                <span>{tool.label}</span>
+                <span className="utility-tool-label">
+                  {tool.label}
+                  <kbd className="tool-shortcut-hint">{tool.shortcut}</kbd>
+                </span>
               </button>
             ))}
           </div>

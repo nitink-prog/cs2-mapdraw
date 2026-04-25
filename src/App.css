@@ -225,6 +225,16 @@ button:hover {
   border-color: var(--accent);
 }
 
+button:disabled {
+  color: rgba(243, 246, 249, 0.38);
+  cursor: not-allowed;
+  opacity: 0.58;
+}
+
+button:disabled:hover {
+  border-color: var(--line);
+}
+
 button:focus-visible {
   outline: 3px solid var(--focus);
   outline-offset: 3px;
@@ -288,6 +298,12 @@ button:focus-visible {
   gap: 10px;
 }
 
+.history-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
 .metadata-warning {
   color: #fbbf24;
 }
@@ -337,9 +353,28 @@ button:focus-visible {
   position: absolute;
   top: 12px;
   left: 14px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   color: var(--text);
   font-size: 14px;
   font-weight: 800;
+  line-height: 1;
+}
+
+.tool-shortcut-hint {
+  display: inline-flex;
+  min-width: 18px;
+  min-height: 18px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.08);
+  color: rgba(243, 246, 249, 0.58);
+  font: inherit;
+  font-size: 11px;
+  font-weight: 900;
   line-height: 1;
 }
 
@@ -444,6 +479,13 @@ button:focus-visible {
 .utility-tool-button[aria-pressed='true'] .utility-tool-icon {
   opacity: 1;
   transform: scale(1.04);
+}
+
+.utility-tool-label {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
 }
 
 @media (max-width: 760px) {
