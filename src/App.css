@@ -30,6 +30,10 @@
   overflow: auto;
 }
 
+.general-panel {
+  overflow: hidden;
+}
+
 .eyebrow {
   margin: 0 0 4px;
   color: var(--muted);
@@ -69,8 +73,12 @@
 
 .map-picker {
   display: grid;
+  flex: 1 1 0;
   grid-template-columns: repeat(3, minmax(0, 1fr));
+  align-content: start;
   gap: 10px;
+  min-height: 0;
+  overflow: auto;
 }
 
 .map-picker-button {
@@ -122,6 +130,84 @@
   text-align: center;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.map-overlay-panel {
+  display: flex;
+  flex: 1 1 0;
+  min-height: 0;
+  align-items: flex-start;
+  padding-top: 20px;
+  border-top: 1px solid var(--line);
+}
+
+.toggle-control {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.035);
+  color: var(--text);
+  cursor: pointer;
+}
+
+.toggle-control input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.toggle-switch {
+  position: relative;
+  width: 44px;
+  height: 24px;
+  flex: 0 0 auto;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.12);
+  transition:
+    background-color 160ms ease,
+    border-color 160ms ease;
+}
+
+.toggle-switch::after {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 16px;
+  height: 16px;
+  border-radius: 999px;
+  background: var(--text);
+  content: '';
+  transition: transform 160ms ease;
+}
+
+.toggle-control:hover {
+  border-color: rgba(255, 255, 255, 0.24);
+  background: rgba(255, 255, 255, 0.075);
+}
+
+.toggle-control input:checked + .toggle-switch {
+  border-color: rgba(34, 197, 94, 0.82);
+  background: rgba(34, 197, 94, 0.38);
+}
+
+.toggle-control input:checked + .toggle-switch::after {
+  transform: translateX(20px);
+}
+
+.toggle-control input:focus-visible + .toggle-switch {
+  outline: 3px solid var(--focus);
+  outline-offset: 3px;
+}
+
+.toggle-label {
+  font-size: 14px;
+  font-weight: 700;
 }
 
 button {
@@ -251,6 +337,7 @@ button:focus-visible {
 
   .general-panel {
     order: 1;
+    overflow: auto;
   }
 
   .map-workspace {

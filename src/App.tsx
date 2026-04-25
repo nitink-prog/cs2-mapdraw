@@ -91,8 +91,10 @@ function useLoadedImage(src: string) {
 
 function App() {
   const [selectedMapId, setSelectedMapId] = useState<MapId>(DEFAULT_MAP_ID)
+  const [showBuyZones, setShowBuyZones] = useState(true)
   const selectedMap = getGameMapById(selectedMapId)
   const mapImage = useLoadedImage(selectedMap.radarSrc)
+  const buyZonesOverlayImage = useLoadedImage(selectedMap.buyZonesOverlaySrc)
   const mapColumnRef = useRef<HTMLElement>(null)
   const stageSize = useStageSize(mapColumnRef)
   const drawingLayerRef = useRef<Konva.Layer>(null)
@@ -297,6 +299,18 @@ function App() {
             )
           })}
         </section>
+
+        <section className="map-overlay-panel" aria-label="Map overlays">
+          <label className="toggle-control">
+            <input
+              type="checkbox"
+              checked={showBuyZones}
+              onChange={(event) => setShowBuyZones(event.target.checked)}
+            />
+            <span className="toggle-switch" aria-hidden="true" />
+            <span className="toggle-label">Show buy zone</span>
+          </label>
+        </section>
       </aside>
 
       <section
@@ -338,6 +352,16 @@ function App() {
                   text={`Loading ${selectedMap.name}...`}
                 />
               )}
+            </Layer>
+            {/* @ink:konva React-Konva z-order follows render order; keep overlays above radar and below user ink. */}
+            <Layer listening={false}>
+              {showBuyZones && buyZonesOverlayImage ? (
+                <Image
+                  image={buyZonesOverlayImage}
+                  width={MAP_WORLD_SIZE}
+                  height={MAP_WORLD_SIZE}
+                />
+              ) : null}
             </Layer>
             <Layer ref={drawingLayerRef} />
           </Stage>
