@@ -244,9 +244,38 @@ type StageSize = {
   width: number
 }
 
-function getStageSize(mapEffectPadding = 0): StageSize {
-  const width = window.innerWidth
-  const height = window.innerHeight
+type StageBounds = {
+  height: number
+  width: number
+}
+
+function getViewportStageBounds(): StageBounds {
+  return {
+    height: window.innerHeight,
+    width: window.innerWidth,
+  }
+}
+
+function getStageBoundsFromElement(element: HTMLElement | null): StageBounds {
+  if (!element) {
+    return getViewportStageBounds()
+  }
+
+  const bounds = element.getBoundingClientRect()
+
+  if (bounds.width <= 0 || bounds.height <= 0) {
+    return getViewportStageBounds()
+  }
+
+  return {
+    height: bounds.height,
+    width: bounds.width,
+  }
+}
+
+function getStageSize(bounds: StageBounds, mapEffectPadding = 0): StageSize {
+  const width = Math.max(1, bounds.width)
+  const height = Math.max(1, bounds.height)
   const mapWithEffectPadding = MAP_WORLD_SIZE + mapEffectPadding * 2
   const mapScale = Math.max(
     0.2,
@@ -267,23 +296,42 @@ function getStageSize(mapEffectPadding = 0): StageSize {
   }
 }
 
-function useStageSize(mapEffectPadding: number) {
+function useStageSize(
+  mapEffectPadding: number,
+  containerRef: { current: HTMLElement | null },
+) {
   const [stageSize, setStageSize] = useState<StageSize>(() =>
-    getStageSize(mapEffectPadding),
+    getStageSize(getViewportStageBounds(), mapEffectPadding),
   )
 
   useEffect(() => {
     const updateStageSize = () => {
-      setStageSize(getStageSize(mapEffectPadding))
+      setStageSize(
+        getStageSize(
+          getStageBoundsFromElement(containerRef.current),
+          mapEffectPadding,
+        ),
+      )
     }
+    const container = containerRef.current
 
     window.addEventListener('resize', updateStageSize)
+    const resizeObserver =
+      container && 'ResizeObserver' in window
+        ? new ResizeObserver(updateStageSize)
+        : null
+
+    if (container) {
+      resizeObserver?.observe(container)
+    }
+
     updateStageSize()
 
     return () => {
       window.removeEventListener('resize', updateStageSize)
+      resizeObserver?.disconnect()
     }
-  }, [mapEffectPadding])
+  }, [containerRef, mapEffectPadding])
 
   return stageSize
 }
@@ -313,6 +361,10 @@ function App() {
   const [selectedMapId, setSelectedMapId] = useState<MapId>(DEFAULT_MAP_ID)
   const [showBuyZones, setShowBuyZones] = useState(true)
   const [selectedTool, setSelectedTool] = useState<ToolMode>('ink')
+  const [selectedBrushColor, setSelectedBrushColor] = useState<BrushColor>(
+    SIDE_BRUSH_COLORS.t,
+  )
+  const [isMapPickerOpen, setIsMapPickerOpen] = useState(false)
   const [isAutoZoom, setIsAutoZoom] = useState(true)
   const [userZoom, setUserZoom] = useState(1)
   const [pan, setPan] = useState<Point>({ x: 0, y: 0 })
@@ -333,10 +385,11 @@ function App() {
     selectedMapMetadata.status === 'ready'
       ? getMaxGrenadeLogicalRadius(selectedMapMetadata.metadata.resolution)
       : 0
-  const stageSize = useStageSize(mapEffectPadding)
+  const mapWorkspaceRef = useRef<HTMLElement>(null)
+  const stageSize = useStageSize(mapEffectPadding, mapWorkspaceRef)
   const maxUserZoom = MAX_MANUAL_ZOOM / stageSize.mapScale
   const effectiveUserZoom = isAutoZoom ? 1 : clampZoom(userZoom, maxUserZoom)
-  // @ink:konva Annotations stay in 0..1024 map coordinates; mapView is the only place zoom/pan enters render and pointer math.
+  // @ink:konva Annotations stay in 0..1024 map coordinates; stage bounds follow the visible workspace so mobile panels reserve real space.
   const mapView = useMemo<MapViewTransform>(
     () => ({
       scale: stageSize.mapScale * effectiveUserZoom,
@@ -578,7 +631,7 @@ function App() {
     event: KonvaEventObject<PointerEvent>,
   ): BrushColor | null => {
     if (event.evt.pointerType !== 'mouse') {
-      return SIDE_BRUSH_COLORS.t
+      return selectedBrushColor
     }
 
     if (event.evt.button === 0) {
@@ -658,6 +711,7 @@ function App() {
     }
 
     activeBrushColorRef.current = brushColor
+    setSelectedBrushColor(brushColor)
     setBrushCursorColor(brushColor)
     updateBrushCursor(event, brushColor)
     event.evt.preventDefault()
@@ -935,27 +989,52 @@ function App() {
     )
   }
 
+  const handleBrushColorSelect = (brushColor: BrushColor) => {
+    activeBrushColorRef.current = brushColor
+    setSelectedBrushColor(brushColor)
+    setBrushCursorColor(brushColor)
+    setSelectedTool('ink')
+  }
+
   const handleMapSelect = (mapId: MapId) => {
     if (mapId === selectedMapId) {
+      setIsMapPickerOpen(false)
       return
     }
 
     finishActiveStroke()
     resetAutoZoom()
     setSelectedMapId(mapId)
+    setIsMapPickerOpen(false)
   }
 
   return (
     <main className="app-shell">
       <aside className="side-panel general-panel" aria-label="General map settings">
-        <header>
+        <header className="general-panel-header">
           <p className="eyebrow">CS2 MapDraw MVP</p>
           <h1 aria-label={selectedMap.name}>
-            <span className="map-title">{selectedMap.name}</span>
+            <span className="map-title desktop-map-title">{selectedMap.name}</span>
+            <button
+              type="button"
+              className="mobile-map-picker-toggle"
+              aria-expanded={isMapPickerOpen}
+              aria-controls="map-picker-list"
+              onClick={() =>
+                setIsMapPickerOpen((currentIsOpen) => !currentIsOpen)
+              }
+            >
+              <span className="map-title">{selectedMap.name}</span>
+              <span className="map-picker-chevron" aria-hidden="true" />
+            </button>
           </h1>
         </header>
 
-        <section className="map-picker" aria-label="Choose map">
+        <section
+          id="map-picker-list"
+          className={`map-picker${isMapPickerOpen ? ' map-picker-open' : ''}`}
+          aria-label="Choose map"
+        >
           {GAME_MAPS.map((map) => {
             const isSelected = map.id === selectedMapId
 
@@ -988,6 +1067,7 @@ function App() {
       </aside>
 
       <section
+        ref={mapWorkspaceRef}
         className="map-workspace"
         aria-label="Drawable CS2 map"
       >
@@ -1032,7 +1112,7 @@ function App() {
                 )}
               </Group>
             </Layer>
-            {/* @ink:konva Fullscreen stage uses map-local groups; active ink must stay above committed annotations to avoid stroke pop on mouseup. */}
+            {/* @ink:konva Stage layers use map-local groups; active ink must stay above committed annotations to avoid stroke pop on mouseup. */}
             <Layer listening={false}>
               <Group
                 x={mapView.x}
@@ -1213,7 +1293,7 @@ function App() {
           <button
             type="button"
             className="mouse-legend ink-tool-button"
-            aria-label="Use ink tool. Left-drag draws T-side orange. Right-drag draws CT-side blue."
+            aria-label="Use ink tool. On desktop, left-drag draws T-side orange and right-drag draws CT-side blue. On mobile, choose T side or CT side below."
             aria-pressed={selectedTool === 'ink'}
             onClick={() => setSelectedTool('ink')}
           >
@@ -1257,6 +1337,26 @@ function App() {
               aria-hidden="true"
             />
           </button>
+          <div className="mobile-brush-color-picker" aria-label="Ink color">
+            <button
+              type="button"
+              className="brush-color-button brush-color-button-t"
+              aria-pressed={selectedBrushColor === SIDE_BRUSH_COLORS.t}
+              onClick={() => handleBrushColorSelect(SIDE_BRUSH_COLORS.t)}
+            >
+              <span className="brush-color-swatch" aria-hidden="true" />
+              <span>T side</span>
+            </button>
+            <button
+              type="button"
+              className="brush-color-button brush-color-button-ct"
+              aria-pressed={selectedBrushColor === SIDE_BRUSH_COLORS.ct}
+              onClick={() => handleBrushColorSelect(SIDE_BRUSH_COLORS.ct)}
+            >
+              <span className="brush-color-swatch" aria-hidden="true" />
+              <span>CT side</span>
+            </button>
+          </div>
           <div className="utility-tool-grid">
             {UTILITY_TOOL_OPTIONS.map((tool) => (
               <button
