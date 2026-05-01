@@ -1,5 +1,8 @@
+import { FLASH_EXPOSURE_TUNING } from './flashExposure'
+
 const FLASHBANG_FULL_BLIND_RADIUS_GAME_UNITS = 1300
-const FLASHBANG_MAX_PARTIAL_BLIND_RADIUS_GAME_UNITS = 2000
+const FLASHBANG_MAX_PARTIAL_BLIND_RADIUS_GAME_UNITS =
+  FLASH_EXPOSURE_TUNING.maxFlashRadius
 const FLASHBANG_FULL_BLIND_FALLOFF_STOP =
   FLASHBANG_FULL_BLIND_RADIUS_GAME_UNITS /
   FLASHBANG_MAX_PARTIAL_BLIND_RADIUS_GAME_UNITS
@@ -53,7 +56,7 @@ export function getGrenadeLogicalRadius(
 }
 
 export function getFlashbangFullBlindLogicalRadius(mapResolution: number) {
-  // @ink:why CS2 flash distance falloff is approximated top-down: full blind near 1300u, fading partial effect out past roughly 50m / 2000u; LOS and view angle are intentionally not encoded here.
+  // @ink:why Keep the full-blind ring tied to CS2-like distance falloff; radar-wall LOS occlusion is rendered separately by the flash exposure overlay.
   return GRENADE_EFFECTS.flash.fullBlindRadiusGameUnits / mapResolution
 }
 

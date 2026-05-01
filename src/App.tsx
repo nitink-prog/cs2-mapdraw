@@ -14,6 +14,7 @@ import {
   getGrenadeLogicalRadius,
   type GrenadeType,
 } from './grenadeEffects'
+import { FlashExposureOverlay } from './FlashExposureOverlay'
 import {
   DEFAULT_MAP_ID,
   GAME_MAPS,
@@ -349,11 +350,14 @@ function useLoadedImage(src: string) {
 
 type GrenadeEffectRadiusProps = {
   grenadeType: GrenadeType
+  mapImage: HTMLImageElement | null
   mapResolution: number
+  origin: Point
   radius: number
+  useRaycastedFlashes: boolean
 }
 
-function FlashbangEffectRadius({
+function RadialFlashbangEffectRadius({
   mapResolution,
   radius,
 }: Pick<GrenadeEffectRadiusProps, 'mapResolution' | 'radius'>) {
@@ -393,14 +397,36 @@ function FlashbangEffectRadius({
 
 function GrenadeEffectRadius({
   grenadeType,
+  mapImage,
   mapResolution,
+  origin,
   radius,
+  useRaycastedFlashes,
 }: GrenadeEffectRadiusProps) {
   const effect = GRENADE_EFFECTS[grenadeType]
 
   if (grenadeType === 'flash') {
+    if (!useRaycastedFlashes) {
+      return (
+        <RadialFlashbangEffectRadius
+          mapResolution={mapResolution}
+          radius={radius}
+        />
+      )
+    }
+
+    if (!mapImage) {
+      return null
+    }
+
     return (
-      <FlashbangEffectRadius mapResolution={mapResolution} radius={radius} />
+      <FlashExposureOverlay
+        mapImage={mapImage}
+        mapResolution={mapResolution}
+        mapWorldSize={MAP_WORLD_SIZE}
+        origin={origin}
+        radius={radius}
+      />
     )
   }
 
@@ -417,6 +443,7 @@ function GrenadeEffectRadius({
 function App() {
   const [selectedMapId, setSelectedMapId] = useState<MapId>(DEFAULT_MAP_ID)
   const [showBuyZones, setShowBuyZones] = useState(true)
+  const [useRaycastedFlashes, setUseRaycastedFlashes] = useState(true)
   const [selectedTool, setSelectedTool] = useState<ToolMode>('ink')
   const [selectedBrushColor, setSelectedBrushColor] = useState<BrushColor>(
     SIDE_BRUSH_COLORS.t,
@@ -1226,8 +1253,11 @@ function App() {
                       {radius !== null && mapResolution !== null ? (
                         <GrenadeEffectRadius
                           grenadeType={annotation.grenadeType}
+                          mapImage={mapImage}
                           mapResolution={mapResolution}
+                          origin={{ x: annotation.x, y: annotation.y }}
                           radius={radius}
+                          useRaycastedFlashes={useRaycastedFlashes}
                         />
                       ) : null}
                       <Circle
@@ -1277,12 +1307,11 @@ function App() {
 
         <section className="tool-group" aria-label="Annotation tools">
           <p className="panel-copy">
-            Smoke radius is {GRENADE_EFFECTS.smoke.radiusGameUnits}u. Flash is
-            a {GRENADE_EFFECTS.flash.radiusGameUnits}u falloff radius with a{' '}
-            {GRENADE_EFFECTS.flash.fullBlindRadiusGameUnits}u full-blind
-            reference; real flashes also depend on line of sight and view
-            angle. Molotov max spread is{' '}
-            {GRENADE_EFFECTS.molotov.radiusGameUnits}u.
+            Smoke radius is {GRENADE_EFFECTS.smoke.radiusGameUnits}u. Flash uses
+            radar-wall line of sight with a {GRENADE_EFFECTS.flash.radiusGameUnits}u
+            falloff radius and a {GRENADE_EFFECTS.flash.fullBlindRadiusGameUnits}u
+            full-blind reference; view angle is not modeled. Molotov max spread
+            is {GRENADE_EFFECTS.molotov.radiusGameUnits}u.
           </p>
           {selectedMapMetadata.status === 'loading' ? (
             <p className="panel-copy">Loading map scale...</p>
@@ -1427,6 +1456,19 @@ function App() {
               </button>
             ))}
           </div>
+        </section>
+        <section className="flash-overlay-panel" aria-label="Flash overlays">
+          <label className="toggle-control">
+            <input
+              type="checkbox"
+              checked={useRaycastedFlashes}
+              onChange={(event) =>
+                setUseRaycastedFlashes(event.target.checked)
+              }
+            />
+            <span className="toggle-switch" aria-hidden="true" />
+            <span className="toggle-label">Ray-casted Flashes</span>
+          </label>
         </section>
       </aside>
     </main>

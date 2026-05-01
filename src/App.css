@@ -154,6 +154,14 @@
   border-top: 1px solid var(--line);
 }
 
+.flash-overlay-panel {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: flex-start;
+  padding-top: 20px;
+  border-top: 1px solid var(--line);
+}
+
 .toggle-control {
   position: relative;
   display: flex;
@@ -636,6 +644,10 @@ button:focus-visible {
 
   .map-overlay-panel {
     margin-top: 0;
+    padding-top: 8px;
+  }
+
+  .flash-overlay-panel {
     padding-top: 8px;
   }
 
