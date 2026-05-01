@@ -10,6 +10,7 @@ import { Circle, Group, Image, Layer, Line, Stage, Text } from 'react-konva'
 import type { KonvaEventObject } from 'konva/lib/Node'
 import {
   GRENADE_EFFECTS,
+  getFlashbangFullBlindLogicalRadius,
   getGrenadeLogicalRadius,
   type GrenadeType,
 } from './grenadeEffects'
@@ -344,6 +345,73 @@ function useLoadedImage(src: string) {
   }, [src])
 
   return loadedImage?.src === src ? loadedImage.image : null
+}
+
+type GrenadeEffectRadiusProps = {
+  grenadeType: GrenadeType
+  mapResolution: number
+  radius: number
+}
+
+function FlashbangEffectRadius({
+  mapResolution,
+  radius,
+}: Pick<GrenadeEffectRadiusProps, 'mapResolution' | 'radius'>) {
+  const effect = GRENADE_EFFECTS.flash
+  const fullBlindRadius = getFlashbangFullBlindLogicalRadius(mapResolution)
+
+  return (
+    <Group>
+      <Circle
+        radius={radius}
+        fillRadialGradientStartPoint={{ x: 0, y: 0 }}
+        fillRadialGradientStartRadius={0}
+        fillRadialGradientEndPoint={{ x: 0, y: 0 }}
+        fillRadialGradientEndRadius={radius}
+        fillRadialGradientColorStops={effect.radialBlurColorStops}
+        shadowColor="rgba(250, 204, 21, 0.34)"
+        shadowBlur={18}
+        shadowOpacity={0.72}
+      />
+      <Circle
+        radius={fullBlindRadius}
+        stroke="rgba(255, 255, 255, 0.42)"
+        strokeWidth={2}
+        dash={[14, 10]}
+        opacity={0.86}
+      />
+      <Circle
+        radius={radius}
+        stroke={effect.stroke}
+        strokeWidth={2}
+        dash={[4, 12]}
+        opacity={0.82}
+      />
+    </Group>
+  )
+}
+
+function GrenadeEffectRadius({
+  grenadeType,
+  mapResolution,
+  radius,
+}: GrenadeEffectRadiusProps) {
+  const effect = GRENADE_EFFECTS[grenadeType]
+
+  if (grenadeType === 'flash') {
+    return (
+      <FlashbangEffectRadius mapResolution={mapResolution} radius={radius} />
+    )
+  }
+
+  return (
+    <Circle
+      radius={radius}
+      fill={effect.fill}
+      stroke={effect.stroke}
+      strokeWidth={3}
+    />
+  )
 }
 
 function App() {
@@ -1137,11 +1205,15 @@ function App() {
                   }
 
                   const effect = GRENADE_EFFECTS[annotation.grenadeType]
-                  const radius =
+                  const mapResolution =
                     selectedMapMetadata.status === 'ready'
+                      ? selectedMapMetadata.metadata.resolution
+                      : null
+                  const radius =
+                    mapResolution !== null
                       ? getGrenadeLogicalRadius(
                           annotation.grenadeType,
-                          selectedMapMetadata.metadata.resolution,
+                          mapResolution,
                         )
                       : null
 
@@ -1151,17 +1223,11 @@ function App() {
                       x={annotation.x}
                       y={annotation.y}
                     >
-                      {radius !== null ? (
-                        <Circle
+                      {radius !== null && mapResolution !== null ? (
+                        <GrenadeEffectRadius
+                          grenadeType={annotation.grenadeType}
+                          mapResolution={mapResolution}
                           radius={radius}
-                          fill={effect.fill}
-                          stroke={effect.stroke}
-                          strokeWidth={3}
-                          dash={
-                            annotation.grenadeType === 'flash'
-                              ? [18, 10]
-                              : undefined
-                          }
                         />
                       ) : null}
                       <Circle
@@ -1212,9 +1278,11 @@ function App() {
         <section className="tool-group" aria-label="Annotation tools">
           <p className="panel-copy">
             Smoke radius is {GRENADE_EFFECTS.smoke.radiusGameUnits}u. Flash is
-            a {GRENADE_EFFECTS.flash.radiusGameUnits}u reference radius; real
-            flashes also depend on line of sight and view angle. Molotov max
-            spread is {GRENADE_EFFECTS.molotov.radiusGameUnits}u.
+            a {GRENADE_EFFECTS.flash.radiusGameUnits}u falloff radius with a{' '}
+            {GRENADE_EFFECTS.flash.fullBlindRadiusGameUnits}u full-blind
+            reference; real flashes also depend on line of sight and view
+            angle. Molotov max spread is{' '}
+            {GRENADE_EFFECTS.molotov.radiusGameUnits}u.
           </p>
           {selectedMapMetadata.status === 'loading' ? (
             <p className="panel-copy">Loading map scale...</p>
