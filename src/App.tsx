@@ -11,7 +11,6 @@ import type { KonvaEventObject } from 'konva/lib/Node'
 import {
   GRENADE_EFFECTS,
   getGrenadeLogicalRadius,
-  getMaxGrenadeLogicalRadius,
   type GrenadeType,
 } from './grenadeEffects'
 import {
@@ -32,7 +31,7 @@ const SIDE_BRUSH_COLORS = {
 const BRUSH_SIZE = 3
 const BRUSH_CURSOR_SIZE = 7
 const OUT_OF_BOUNDS_CURSOR_COLOR = '#ef4444'
-const VIEWPORT_STAGE_PADDING = 32
+const MAX_AUTO_ZOOM = 2
 const MIN_MANUAL_ZOOM = 1
 const MAX_MANUAL_ZOOM = 5
 const ZOOM_BUTTON_STEP = 0.25
@@ -273,17 +272,13 @@ function getStageBoundsFromElement(element: HTMLElement | null): StageBounds {
   }
 }
 
-function getStageSize(bounds: StageBounds, mapEffectPadding = 0): StageSize {
+function getStageSize(bounds: StageBounds): StageSize {
   const width = Math.max(1, bounds.width)
   const height = Math.max(1, bounds.height)
-  const mapWithEffectPadding = MAP_WORLD_SIZE + mapEffectPadding * 2
-  const mapScale = Math.max(
-    0.2,
-    Math.min(
-      1,
-      (width - VIEWPORT_STAGE_PADDING) / mapWithEffectPadding,
-      (height - VIEWPORT_STAGE_PADDING) / mapWithEffectPadding,
-    ),
+  const mapScale = Math.min(
+    MAX_AUTO_ZOOM,
+    width / MAP_WORLD_SIZE,
+    height / MAP_WORLD_SIZE,
   )
   const displaySize = MAP_WORLD_SIZE * mapScale
 
@@ -296,21 +291,15 @@ function getStageSize(bounds: StageBounds, mapEffectPadding = 0): StageSize {
   }
 }
 
-function useStageSize(
-  mapEffectPadding: number,
-  containerRef: { current: HTMLElement | null },
-) {
+function useStageSize(containerRef: { current: HTMLElement | null }) {
   const [stageSize, setStageSize] = useState<StageSize>(() =>
-    getStageSize(getViewportStageBounds(), mapEffectPadding),
+    getStageSize(getViewportStageBounds()),
   )
 
   useEffect(() => {
     const updateStageSize = () => {
       setStageSize(
-        getStageSize(
-          getStageBoundsFromElement(containerRef.current),
-          mapEffectPadding,
-        ),
+        getStageSize(getStageBoundsFromElement(containerRef.current)),
       )
     }
     const container = containerRef.current
@@ -331,7 +320,7 @@ function useStageSize(
       window.removeEventListener('resize', updateStageSize)
       resizeObserver?.disconnect()
     }
-  }, [containerRef, mapEffectPadding])
+  }, [containerRef])
 
   return stageSize
 }
@@ -381,15 +370,11 @@ function App() {
   const selectedMapMetadata = useMapMetadata(selectedMap.metaSrc)
   const mapImage = useLoadedImage(selectedMap.radarSrc)
   const buyZonesOverlayImage = useLoadedImage(selectedMap.buyZonesOverlaySrc)
-  const mapEffectPadding =
-    selectedMapMetadata.status === 'ready'
-      ? getMaxGrenadeLogicalRadius(selectedMapMetadata.metadata.resolution)
-      : 0
   const mapWorkspaceRef = useRef<HTMLElement>(null)
-  const stageSize = useStageSize(mapEffectPadding, mapWorkspaceRef)
+  const stageSize = useStageSize(mapWorkspaceRef)
   const maxUserZoom = MAX_MANUAL_ZOOM / stageSize.mapScale
   const effectiveUserZoom = isAutoZoom ? 1 : clampZoom(userZoom, maxUserZoom)
-  // @ink:konva Annotations stay in 0..1024 map coordinates; stage bounds follow the visible workspace so mobile panels reserve real space.
+  // @ink:konva Annotations stay in 0..1024 map coordinates; Auto-Zoom fits those drawable bounds to the measured workspace, capped at 200%.
   const mapView = useMemo<MapViewTransform>(
     () => ({
       scale: stageSize.mapScale * effectiveUserZoom,
