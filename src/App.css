@@ -315,22 +315,189 @@ button:focus-visible {
   font-size: 28px;
 }
 
-.tool-group {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
+/* @ink:ux Segmented column: shared chrome; hover/focus-visible lift segment + accent rail; active uses inset press (z-index avoids divider glitches). */
 .clear-actions {
   display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
+  flex-direction: column;
+  gap: 0;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.clear-action-button {
+  position: relative;
+  z-index: 0;
+  display: flex;
+  width: 100%;
+  min-height: 54px;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 14px;
+  border: none;
+  border-radius: 0;
+  border-bottom: 1px solid var(--line);
+  padding: 14px 16px;
+  background: transparent;
+  color: rgba(243, 246, 249, 0.92);
+  font-weight: 800;
+  cursor: pointer;
+  transition:
+    background-color 160ms ease,
+    color 160ms ease,
+    box-shadow 120ms ease,
+    transform 90ms ease;
+}
+
+.clear-action-button:last-child {
+  border-bottom: none;
+}
+
+.clear-action-button::after {
+  position: absolute;
+  top: 14%;
+  bottom: 14%;
+  left: 0;
+  width: 3px;
+  border-radius: 0 4px 4px 0;
+  background: var(--accent);
+  opacity: 0;
+  transition: opacity 160ms ease;
+  content: '';
+}
+
+.clear-action-button:hover,
+.clear-action-button:focus-visible {
+  z-index: 1;
+  border-bottom-color: rgba(255, 255, 255, 0.14);
+  background:
+    linear-gradient(
+      90deg,
+      rgba(255, 59, 48, 0.14) 0%,
+      rgba(255, 255, 255, 0.065) 42%,
+      rgba(255, 255, 255, 0.045) 100%
+    );
+  color: var(--text);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.06),
+    0 1px 0 rgba(0, 0, 0, 0.12);
+}
+
+.clear-action-button:hover::after,
+.clear-action-button:focus-visible::after {
+  opacity: 0.92;
+}
+
+.clear-action-button:hover .clear-action-icon,
+.clear-action-button:focus-visible .clear-action-icon {
+  color: rgba(255, 255, 255, 0.94);
+}
+
+.clear-action-button:active {
+  border-bottom-color: rgba(255, 255, 255, 0.12);
+  background:
+    linear-gradient(
+      180deg,
+      rgba(0, 0, 0, 0.38) 0%,
+      rgba(255, 59, 48, 0.07) 100%
+    );
+  box-shadow:
+    inset 0 3px 14px rgba(0, 0, 0, 0.55),
+    inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  transform: translateY(1px);
+  transition-duration: 70ms;
+}
+
+.clear-action-button:active::after {
+  opacity: 1;
+}
+
+.clear-action-button:focus-visible {
+  z-index: 2;
+  outline: 3px solid rgba(56, 189, 248, 0.55);
+  outline-offset: -3px;
+}
+
+.clear-action-button:focus:not(:focus-visible) {
+  outline: none;
+}
+
+.clear-action-icon {
+  flex-shrink: 0;
+  width: 26px;
+  height: 26px;
+  color: rgba(243, 246, 249, 0.72);
+  transition:
+    color 160ms ease,
+    transform 90ms ease;
+}
+
+.clear-action-button:active .clear-action-icon {
+  color: rgba(255, 235, 232, 0.96);
+  transform: scale(0.93);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .clear-action-button,
+  .clear-action-icon {
+    transition-duration: 0.01ms;
+  }
+
+  .clear-action-button:active {
+    transform: none;
+  }
+
+  .clear-action-button:active .clear-action-icon {
+    transform: none;
+  }
 }
 
 .history-actions {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 10px;
+}
+
+.history-action-button {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+  border-radius: 16px;
+  padding: 10px 12px;
+  font-weight: 800;
+}
+
+.history-action-button:disabled .history-action-icon {
+  opacity: 0.45;
+}
+
+.history-action-icon {
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+  color: rgba(243, 246, 249, 0.78);
+}
+
+.history-action-label {
+  flex: 1 1 auto;
+  min-width: 0;
+  text-align: left;
+}
+
+.history-shortcuts {
+  display: inline-flex;
+  flex-shrink: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+}
+
+.wide-kbd-hint {
+  min-width: auto;
+  padding-inline: 6px;
 }
 
 .zoom-control {
@@ -347,17 +514,74 @@ button:focus-visible {
 }
 
 .zoom-control-button {
-  font-size: 18px;
-  line-height: 1;
+  display: grid;
+  place-items: center;
+  padding-inline: 8px;
+  border-radius: 14px;
+}
+
+.zoom-step-icon {
+  width: 18px;
+  height: 18px;
+  color: rgba(243, 246, 249, 0.9);
 }
 
 .zoom-amount-button {
   border-color: rgba(255, 255, 255, 0.14);
+  border-radius: 14px;
+  padding-inline: 12px;
+}
+
+.zoom-amount-inner {
+  display: flex;
+  width: 100%;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.zoom-auto-label {
+  flex-shrink: 0;
+  font-size: 13px;
+  font-weight: 900;
+  letter-spacing: 0.02em;
+  color: rgba(243, 246, 249, 0.38);
+  transition:
+    color 160ms ease,
+    text-shadow 160ms ease;
+}
+
+.zoom-auto-label-active {
+  color: #7dd3fc;
+  text-shadow: 0 0 14px rgba(56, 189, 248, 0.35);
+}
+
+.zoom-percent-readout {
+  flex-shrink: 0;
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+  color: rgba(243, 246, 249, 0.92);
 }
 
 .zoom-amount-button[aria-pressed='true'] {
   border-color: #38bdf8;
   box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.34);
+}
+
+.grenade-metadata-strip {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.grenade-metadata-copy {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.grenade-metadata-copy:first-child {
+  margin-top: 2px;
 }
 
 .metadata-warning {
@@ -487,6 +711,77 @@ button:focus-visible {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 10px;
+}
+
+.utility-tool-cell {
+  position: relative;
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+}
+
+.utility-tool-cell > .utility-tool-button {
+  flex: 1 1 auto;
+  width: 100%;
+}
+
+/* @ink:ux Pins open via data-help-open for touch; hover/focus reveals copy without stealing tool clicks. */
+.utility-tool-help-btn {
+  position: absolute;
+  top: 7px;
+  right: 7px;
+  z-index: 2;
+  display: grid;
+  width: 18px;
+  height: 18px;
+  place-items: center;
+  padding: 0;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.72);
+  color: rgba(243, 246, 249, 0.72);
+  transition:
+    border-color 160ms ease,
+    background-color 160ms ease,
+    color 160ms ease,
+    transform 160ms ease;
+}
+
+.utility-tool-help-btn:hover {
+  border-color: rgba(255, 255, 255, 0.38);
+  background: rgba(30, 41, 59, 0.92);
+  color: rgba(243, 246, 249, 0.92);
+}
+
+.utility-tool-help-btn:focus-visible {
+  outline: 3px solid var(--focus);
+  outline-offset: 2px;
+}
+
+.utility-tool-help-icon {
+  font-family: ui-serif, Georgia, 'Times New Roman', serif;
+  font-size: 10px;
+  font-weight: 700;
+  font-style: italic;
+  line-height: 1;
+}
+
+/* @ink:konva Tooltip is portaled to document.body so .side-panel overflow:auto does not clip it. */
+.grenade-help-tooltip-portal {
+  position: fixed;
+  z-index: 12000;
+  box-sizing: border-box;
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(15, 23, 42, 0.96);
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.35);
+  color: rgba(226, 232, 240, 0.92);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.45;
+  pointer-events: auto;
 }
 
 .utility-tool-button {
@@ -692,24 +987,50 @@ button:focus-visible {
     overflow: auto;
   }
 
-  .tools-panel header,
-  .tools-panel .tool-group {
+  .tools-panel header {
     display: none;
   }
 
-  .clear-actions,
+  .clear-actions {
+    border-radius: 14px;
+  }
+
   .history-actions {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 8px;
   }
 
-  .clear-actions button,
-  .history-actions button {
-    min-height: 36px;
-    padding: 7px 10px;
+  .clear-actions .clear-action-button {
+    min-height: 48px;
+    padding: 12px 12px;
     font-size: 12px;
     font-weight: 800;
+  }
+
+  .history-actions .history-action-button {
+    min-height: 36px;
+    padding: 8px 10px;
+    font-size: 12px;
+    font-weight: 800;
+  }
+
+  .history-action-icon {
+    width: 18px;
+    height: 18px;
+  }
+
+  .clear-action-icon {
+    width: 22px;
+    height: 22px;
+  }
+
+  .zoom-auto-label {
+    font-size: 11px;
+  }
+
+  .zoom-percent-readout {
+    font-size: 12px;
   }
 
   .zoom-control {
@@ -805,5 +1126,21 @@ button:focus-visible {
   .utility-tool-icon {
     width: 24px;
     height: 28px;
+  }
+
+  .utility-tool-help-btn {
+    top: 4px;
+    right: 4px;
+    width: 17px;
+    height: 17px;
+  }
+
+  .utility-tool-help-icon {
+    font-size: 9px;
+  }
+
+  .grenade-help-tooltip-portal {
+    padding: 8px 10px;
+    font-size: 11px;
   }
 }

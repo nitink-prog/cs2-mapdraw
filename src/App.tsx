@@ -2,15 +2,18 @@ import Konva from 'konva'
 import {
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
 } from 'react'
+import { createPortal } from 'react-dom'
 import { Circle, Group, Image, Layer, Line, Stage, Text } from 'react-konva'
 import type { KonvaEventObject } from 'konva/lib/Node'
 import {
   GRENADE_EFFECTS,
   getFlashbangFullBlindLogicalRadius,
+  getGrenadeHelpText,
   getGrenadeLogicalRadius,
   type GrenadeType,
 } from './grenadeEffects'
@@ -24,6 +27,19 @@ import {
 import type { MapId } from './mapCatalog'
 import { useMapMetadata } from './mapMetadata'
 import './App.css'
+
+function clientUsesAppleModifierHints(): boolean {
+  if (typeof navigator === 'undefined') {
+    return false
+  }
+
+  const ua = navigator.userAgent || ''
+  const platform = navigator.platform || ''
+  return (
+    /Mac|iPhone|iPad|iPod/i.test(platform) ||
+    /\biPhone\b|\biPad\b|\biPod\b/i.test(ua)
+  )
+}
 
 const MAP_WORLD_SIZE = 1024
 const SIDE_BRUSH_COLORS = {
@@ -135,6 +151,206 @@ const TOOL_SHORTCUTS: Record<string, ToolMode> = {
   d: 'molotov',
   s: 'flash',
   w: 'ink',
+}
+
+function GrenadeUtilityToolCell({
+  tool,
+  selectedTool,
+  onSelect,
+}: {
+  tool: (typeof UTILITY_TOOL_OPTIONS)[number]
+  selectedTool: ToolMode
+  onSelect: (type: GrenadeType) => void
+}) {
+  const [helpPinned, setHelpPinned] = useState(false)
+  const [hoverReveal, setHoverReveal] = useState(false)
+  const [focusReveal, setFocusReveal] = useState(false)
+  const cellRef = useRef<HTMLDivElement>(null)
+  const helpBtnRef = useRef<HTMLButtonElement>(null)
+  const tooltipPortalRef = useRef<HTMLDivElement>(null)
+  const hoverDismissTimerRef = useRef<number>(null)
+  const helpText = getGrenadeHelpText(tool.id)
+
+  const tooltipOpen = helpPinned || hoverReveal || focusReveal
+
+  const clearHoverDismissTimer = useCallback(() => {
+    if (hoverDismissTimerRef.current !== null) {
+      window.clearTimeout(hoverDismissTimerRef.current)
+      hoverDismissTimerRef.current = null
+    }
+  }, [])
+
+  const scheduleHoverDismiss = useCallback(() => {
+    clearHoverDismissTimer()
+    hoverDismissTimerRef.current = window.setTimeout(() => {
+      setHoverReveal(false)
+      hoverDismissTimerRef.current = null
+    }, 140)
+  }, [clearHoverDismissTimer])
+
+  useEffect(() => {
+    return () => clearHoverDismissTimer()
+  }, [clearHoverDismissTimer])
+
+  useLayoutEffect(() => {
+    if (!tooltipOpen || !helpBtnRef.current || !tooltipPortalRef.current) {
+      return
+    }
+
+    const tip = tooltipPortalRef.current
+    const margin = 8
+
+    const updatePosition = () => {
+      const btn = helpBtnRef.current
+      if (!btn || !tooltipPortalRef.current) {
+        return
+      }
+
+      const rect = btn.getBoundingClientRect()
+      const vw = window.innerWidth
+      const vh = window.innerHeight
+      const width = Math.min(280, vw - margin * 2)
+
+      tip.style.width = `${width}px`
+
+      let left = rect.right - width
+      left = Math.max(margin, Math.min(left, vw - width - margin))
+
+      const tipHeight = tip.offsetHeight
+      let top = rect.bottom + margin
+      if (top + tipHeight > vh - margin) {
+        top = rect.top - tipHeight - margin
+      }
+      if (top < margin) {
+        top = margin
+      }
+
+      tip.style.left = `${left}px`
+      tip.style.top = `${top}px`
+    }
+
+    updatePosition()
+
+    const resizeObserver = new ResizeObserver(updatePosition)
+    resizeObserver.observe(tip)
+    window.addEventListener('scroll', updatePosition, true)
+    window.addEventListener('resize', updatePosition)
+
+    return () => {
+      resizeObserver.disconnect()
+      window.removeEventListener('scroll', updatePosition, true)
+      window.removeEventListener('resize', updatePosition)
+    }
+  }, [tooltipOpen, helpText])
+
+  useEffect(() => {
+    if (!helpPinned) {
+      return
+    }
+
+    const handlePointerDown = (event: PointerEvent) => {
+      const target = event.target as Node | null
+      if (!target) {
+        return
+      }
+      if (cellRef.current?.contains(target)) {
+        return
+      }
+      if (tooltipPortalRef.current?.contains(target)) {
+        return
+      }
+      setHelpPinned(false)
+    }
+
+    document.addEventListener('pointerdown', handlePointerDown)
+    return () => document.removeEventListener('pointerdown', handlePointerDown)
+  }, [helpPinned])
+
+  const supportsFineHover =
+    typeof window !== 'undefined' &&
+    typeof window.matchMedia === 'function' &&
+    window.matchMedia('(hover: hover)').matches
+
+  return (
+    <div ref={cellRef} className="utility-tool-cell">
+      <button
+        type="button"
+        className="utility-tool-button"
+        aria-pressed={selectedTool === tool.id}
+        onClick={() => onSelect(tool.id)}
+      >
+        <img src={tool.iconSrc} alt="" className="utility-tool-icon" />
+        <span className="utility-tool-label">
+          {tool.label}
+          <kbd className="tool-shortcut-hint">{tool.shortcut}</kbd>
+        </span>
+      </button>
+      {/* @ink:ux Portal tooltip escapes .side-panel overflow; hover bridge keeps it open moving onto the panel; pin uses outside-dismiss excluding tooltip node. */}
+      <button
+        ref={helpBtnRef}
+        type="button"
+        className="utility-tool-help-btn"
+        aria-label={`How ${tool.label} radius is modeled`}
+        aria-expanded={helpPinned}
+        aria-controls={`grenade-help-${tool.id}`}
+        onPointerDown={(event) => event.stopPropagation()}
+        onMouseEnter={() => {
+          if (!supportsFineHover || helpPinned) {
+            return
+          }
+          clearHoverDismissTimer()
+          setHoverReveal(true)
+        }}
+        onMouseLeave={() => {
+          if (!supportsFineHover || helpPinned) {
+            return
+          }
+          scheduleHoverDismiss()
+        }}
+        onFocus={(event) => {
+          if (!event.currentTarget.matches(':focus-visible')) {
+            return
+          }
+          clearHoverDismissTimer()
+          setFocusReveal(true)
+        }}
+        onBlur={() => setFocusReveal(false)}
+        onClick={(event) => {
+          event.stopPropagation()
+          setHelpPinned((previous) => !previous)
+        }}
+      >
+        <span className="utility-tool-help-icon" aria-hidden>
+          i
+        </span>
+      </button>
+      {tooltipOpen
+        ? createPortal(
+            <div
+              ref={tooltipPortalRef}
+              className="grenade-help-tooltip-portal"
+              role="tooltip"
+              id={`grenade-help-${tool.id}`}
+              onMouseEnter={() => {
+                if (!supportsFineHover || helpPinned) {
+                  return
+                }
+                clearHoverDismissTimer()
+              }}
+              onMouseLeave={() => {
+                if (!supportsFineHover || helpPinned) {
+                  return
+                }
+                scheduleHoverDismiss()
+              }}
+            >
+              {helpText}
+            </div>,
+            document.body,
+          )
+        : null}
+    </div>
+  )
 }
 
 function createEmptyAnnotationHistory(): AnnotationHistory {
@@ -487,6 +703,7 @@ function App() {
     ],
   )
   const zoomPercent = Math.round(mapView.scale * 100)
+  const modifierHintsApple = useMemo(() => clientUsesAppleModifierHints(), [])
   const drawingLayerRef = useRef<Konva.Layer>(null)
   const activeLineRef = useRef<Konva.Line | null>(null)
   const isDrawingRef = useRef(false)
@@ -1305,55 +1522,143 @@ function App() {
           <h2>Tools</h2>
         </header>
 
-        <section className="tool-group" aria-label="Annotation tools">
-          <p className="panel-copy">
-            Smoke radius is {GRENADE_EFFECTS.smoke.radiusGameUnits}u. Flash uses
-            radar-wall line of sight with a {GRENADE_EFFECTS.flash.radiusGameUnits}u
-            falloff radius and a {GRENADE_EFFECTS.flash.fullBlindRadiusGameUnits}u
-            full-blind reference; view angle is not modeled. Molotov max spread
-            is {GRENADE_EFFECTS.molotov.radiusGameUnits}u.
-          </p>
-          {selectedMapMetadata.status === 'loading' ? (
-            <p className="panel-copy">Loading map scale...</p>
-          ) : null}
-          {selectedMapMetadata.status === 'error' ? (
-            <p className="panel-copy metadata-warning">
-              Map metadata failed to load; grenade radii are hidden.
-            </p>
-          ) : null}
-        </section>
-
-        <div className="clear-actions">
-          <button type="button" onClick={clearDrawing}>
-            Clear ink
+        <div
+          className="clear-actions"
+          role="group"
+          aria-label="Clear ink lines or grenade markers"
+        >
+          <button type="button" className="clear-action-button" onClick={clearDrawing}>
+            <svg
+              className="clear-action-icon"
+              viewBox="0 0 24 24"
+              aria-hidden="true"
+            >
+              <path
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                d="M8 20h8M10 5h4l1 3h4v2H5V8l1-3Zm2 8v6m4-6v6M9 9v9"
+              />
+            </svg>
+            <span>Clear ink</span>
           </button>
-          <button type="button" onClick={clearGrenades}>
-            Clear grenades
+          <button type="button" className="clear-action-button" onClick={clearGrenades}>
+            <svg
+              className="clear-action-icon"
+              viewBox="0 0 24 24"
+              aria-hidden="true"
+            >
+              <circle
+                cx="12"
+                cy="12"
+                r="7"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+              />
+              <path
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                d="m8 16 8-8"
+              />
+            </svg>
+            <span>Clear grenades</span>
           </button>
         </div>
         <div className="history-actions" aria-label="Map history controls">
           <button
             type="button"
+            className="history-action-button"
             onClick={undoCurrentMapAction}
             disabled={!canUndo}
           >
-            Undo
+            <svg
+              className="history-action-icon"
+              viewBox="0 0 24 24"
+              aria-hidden="true"
+            >
+              <path
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                d="M9 14 4 9l5-5M4 9h11a5 5 0 0 1 5 5v1"
+              />
+            </svg>
+            <span className="history-action-label">Undo</span>
+            <span className="history-shortcuts">
+              {modifierHintsApple ? (
+                <>
+                  <kbd className="tool-shortcut-hint">⌘</kbd>
+                  <kbd className="tool-shortcut-hint">Z</kbd>
+                </>
+              ) : (
+                <>
+                  <kbd className="tool-shortcut-hint wide-kbd-hint">Ctrl</kbd>
+                  <kbd className="tool-shortcut-hint">Z</kbd>
+                </>
+              )}
+            </span>
           </button>
           <button
             type="button"
+            className="history-action-button"
             onClick={redoCurrentMapAction}
             disabled={!canRedo}
           >
-            Redo
+            <svg
+              className="history-action-icon"
+              viewBox="0 0 24 24"
+              aria-hidden="true"
+            >
+              <path
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                d="m15 14 5-5-5-5M20 9H9a5 5 0 0 0-5 5v1"
+              />
+            </svg>
+            <span className="history-action-label">Redo</span>
+            <span className="history-shortcuts">
+              {modifierHintsApple ? (
+                <>
+                  <kbd className="tool-shortcut-hint">⌘</kbd>
+                  <kbd className="tool-shortcut-hint">⇧</kbd>
+                  <kbd className="tool-shortcut-hint">Z</kbd>
+                </>
+              ) : (
+                <>
+                  <kbd className="tool-shortcut-hint wide-kbd-hint">Ctrl</kbd>
+                  <kbd className="tool-shortcut-hint wide-kbd-hint">Shift</kbd>
+                  <kbd className="tool-shortcut-hint">Z</kbd>
+                </>
+              )}
+            </span>
           </button>
         </div>
         <div className="zoom-control" aria-label="Map zoom controls">
           <button
             type="button"
             className="zoom-control-button"
+            aria-label="Zoom out"
             onClick={() => changeZoomByPercent(-ZOOM_BUTTON_STEP)}
           >
-            -
+            <svg className="zoom-step-icon" viewBox="0 0 24 24" aria-hidden="true">
+              <path
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2.25"
+                strokeLinecap="round"
+                d="M7 12h10"
+              />
+            </svg>
           </button>
           <button
             type="button"
@@ -1361,14 +1666,32 @@ function App() {
             aria-pressed={isAutoZoom}
             onClick={resetAutoZoom}
           >
-            {zoomPercent}%
+            <span className="zoom-amount-inner">
+              <span
+                className={
+                  isAutoZoom ? 'zoom-auto-label zoom-auto-label-active' : 'zoom-auto-label'
+                }
+              >
+                Auto
+              </span>
+              <span className="zoom-percent-readout">{zoomPercent}%</span>
+            </span>
           </button>
           <button
             type="button"
             className="zoom-control-button"
+            aria-label="Zoom in"
             onClick={() => changeZoomByPercent(ZOOM_BUTTON_STEP)}
           >
-            +
+            <svg className="zoom-step-icon" viewBox="0 0 24 24" aria-hidden="true">
+              <path
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2.25"
+                strokeLinecap="round"
+                d="M12 7v10M7 12h10"
+              />
+            </svg>
           </button>
         </div>
         <section className="tool-picker-section" aria-label="Drawing tools">
@@ -1439,21 +1762,26 @@ function App() {
               <span>CT side</span>
             </button>
           </div>
+          <div className="grenade-metadata-strip" aria-live="polite">
+            {selectedMapMetadata.status === 'loading' ? (
+              <p className="panel-copy grenade-metadata-copy">
+                Loading map scale...
+              </p>
+            ) : null}
+            {selectedMapMetadata.status === 'error' ? (
+              <p className="panel-copy metadata-warning grenade-metadata-copy">
+                Map metadata failed to load; grenade radii are hidden.
+              </p>
+            ) : null}
+          </div>
           <div className="utility-tool-grid">
             {UTILITY_TOOL_OPTIONS.map((tool) => (
-              <button
+              <GrenadeUtilityToolCell
                 key={tool.id}
-                type="button"
-                className="utility-tool-button"
-                aria-pressed={selectedTool === tool.id}
-                onClick={() => handleUtilityToolSelect(tool.id)}
-              >
-                <img src={tool.iconSrc} alt="" className="utility-tool-icon" />
-                <span className="utility-tool-label">
-                  {tool.label}
-                  <kbd className="tool-shortcut-hint">{tool.shortcut}</kbd>
-                </span>
-              </button>
+                tool={tool}
+                selectedTool={selectedTool}
+                onSelect={handleUtilityToolSelect}
+              />
             ))}
           </div>
         </section>

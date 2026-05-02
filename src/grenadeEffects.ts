@@ -47,6 +47,19 @@ export const GRENADE_EFFECTS = {
 
 export type GrenadeType = keyof typeof GRENADE_EFFECTS
 
+/** Modeling notes for the tools panel (i) affordance; keeps copy tied to radii above. */
+export function getGrenadeHelpText(type: GrenadeType): string {
+  // Exhaustive switch keeps copy aligned with radius fields on each grenade kind.
+  switch (type) {
+    case 'smoke':
+      return `Smoke radius is ${GRENADE_EFFECTS.smoke.radiusGameUnits}u.`
+    case 'flash':
+      return `Flash uses radar-wall line of sight with a ${GRENADE_EFFECTS.flash.radiusGameUnits}u falloff radius and a ${GRENADE_EFFECTS.flash.fullBlindRadiusGameUnits}u full-blind reference; view angle is not modeled.`
+    case 'molotov':
+      return `Molotov max spread is ${GRENADE_EFFECTS.molotov.radiusGameUnits}u.`
+  }
+}
+
 export function getGrenadeLogicalRadius(
   grenadeType: GrenadeType,
   mapResolution: number,
