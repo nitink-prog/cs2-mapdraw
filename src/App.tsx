@@ -1309,7 +1309,7 @@ function App() {
     <main className="app-shell">
       <aside className="side-panel general-panel" aria-label="General map settings">
         <header className="general-panel-header">
-          <p className="eyebrow">CS2 MapDraw MVP</p>
+          <p className="eyebrow">CS2 MapDraw</p>
           <h1 aria-label={selectedMap.name}>
             <span className="map-title desktop-map-title">{selectedMap.name}</span>
             <button
@@ -1350,17 +1350,37 @@ function App() {
           })}
         </section>
 
-        <section className="map-overlay-panel" aria-label="Map overlays">
-          <label className="toggle-control">
-            <input
-              type="checkbox"
-              checked={showBuyZones}
-              onChange={(event) => setShowBuyZones(event.target.checked)}
-            />
-            <span className="toggle-switch" aria-hidden="true" />
-            <span className="toggle-label">Show buy zone</span>
-          </label>
-        </section>
+        {/* @ink:ux Footer uses margin-top:auto on desktop so attribution + overlays pin below the scrollable map grid; on mobile .general-panel scrolls (see App.css). */}
+        <div className="general-panel-footer">
+          <section
+            className="creator-attribution-card"
+            aria-label="About CS2 MapDraw"
+          >
+            <p className="creator-attribution-heading">Created by Nitin K</p>
+            <p className="creator-attribution-body">
+              I created this for CS2 players looking for a smooth map drawing
+              app. Other sites I tried had clunky zooming and panning,
+              didn&apos;t have tool shortcuts, or didn&apos;t even take the map
+              into consideration when rendering flashes. CS2 MapDraw solves
+              these issues.
+            </p>
+            <p className="creator-attribution-body">
+              I hope this free tool helps with planning and strategy.
+            </p>
+          </section>
+
+          <section className="map-overlay-panel" aria-label="Map overlays">
+            <label className="toggle-control">
+              <input
+                type="checkbox"
+                checked={showBuyZones}
+                onChange={(event) => setShowBuyZones(event.target.checked)}
+              />
+              <span className="toggle-switch" aria-hidden="true" />
+              <span className="toggle-label">Show buy zone</span>
+            </label>
+          </section>
+        </div>
       </aside>
 
       <section
