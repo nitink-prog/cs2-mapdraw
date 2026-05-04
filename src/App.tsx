@@ -46,6 +46,10 @@ const SIDE_BRUSH_COLORS = {
   t: '#FDAC1A',
   ct: '#1c3bec',
 } as const
+const SIDE_TEAM_ICON_SRC = {
+  t: getPublicAssetUrl('/icons/teams/t_white.png'),
+  ct: getPublicAssetUrl('/icons/teams/ct_white.png'),
+} as const
 const BRUSH_SIZE = 3
 const BRUSH_CURSOR_SIZE = 7
 const OUT_OF_BOUNDS_CURSOR_COLOR = '#ef4444'
@@ -1983,7 +1987,14 @@ function App() {
             <span
               className="mouse-legend-color mouse-legend-color-t"
               aria-hidden="true"
-            />
+            >
+              <img
+                className="mouse-legend-team-icon"
+                src={SIDE_TEAM_ICON_SRC.t}
+                alt=""
+                draggable={false}
+              />
+            </span>
             <svg
               className="mouse-legend-icon"
               viewBox="0 0 64 96"
@@ -2015,7 +2026,14 @@ function App() {
             <span
               className="mouse-legend-color mouse-legend-color-ct"
               aria-hidden="true"
-            />
+            >
+              <img
+                className="mouse-legend-team-icon"
+                src={SIDE_TEAM_ICON_SRC.ct}
+                alt=""
+                draggable={false}
+              />
+            </span>
           </button>
           <div className="mobile-brush-color-picker" aria-label="Ink color">
             <button
@@ -2024,7 +2042,14 @@ function App() {
               aria-pressed={selectedBrushColor === SIDE_BRUSH_COLORS.t}
               onClick={() => handleBrushColorSelect(SIDE_BRUSH_COLORS.t)}
             >
-              <span className="brush-color-swatch" aria-hidden="true" />
+              <span className="brush-color-swatch" aria-hidden="true">
+                <img
+                  className="brush-color-team-icon"
+                  src={SIDE_TEAM_ICON_SRC.t}
+                  alt=""
+                  draggable={false}
+                />
+              </span>
               <span>T side</span>
             </button>
             <button
@@ -2033,7 +2058,14 @@ function App() {
               aria-pressed={selectedBrushColor === SIDE_BRUSH_COLORS.ct}
               onClick={() => handleBrushColorSelect(SIDE_BRUSH_COLORS.ct)}
             >
-              <span className="brush-color-swatch" aria-hidden="true" />
+              <span className="brush-color-swatch" aria-hidden="true">
+                <img
+                  className="brush-color-team-icon"
+                  src={SIDE_TEAM_ICON_SRC.ct}
+                  alt=""
+                  draggable={false}
+                />
+              </span>
               <span>CT side</span>
             </button>
           </div>

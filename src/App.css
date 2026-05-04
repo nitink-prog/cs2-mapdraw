@@ -695,12 +695,23 @@ button:focus-visible {
 }
 
 .mouse-legend-color {
-  display: block;
+  /* @ink:ux Team glyphs sit centered on T/CT ink colors for quick recognition. */
+  display: flex;
+  align-items: center;
+  justify-content: center;
   width: 30px;
   height: 30px;
   border: 1px solid rgba(255, 255, 255, 0.2);
   border-radius: 10px;
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.24);
+}
+
+.mouse-legend-team-icon {
+  width: 19px;
+  height: 19px;
+  object-fit: contain;
+  pointer-events: none;
+  user-select: none;
 }
 
 .mouse-legend-color-t {
@@ -709,6 +720,11 @@ button:focus-visible {
 
 .mouse-legend-color-ct {
   background: #1c3bec;
+}
+
+/* @ink:ux Track is wider than swatch; default start alignment stranded slack on the outer edge for T and inner edge for CT, so mouse-to-square spacing looked uneven—center each swatch in its column. */
+.mouse-legend > .mouse-legend-color {
+  justify-self: center;
 }
 
 .mobile-brush-color-picker {
@@ -1143,11 +1159,22 @@ button:focus-visible {
   }
 
   .brush-color-swatch {
+    display: flex;
+    align-items: center;
+    justify-content: center;
     width: 18px;
     height: 18px;
     border: 1px solid rgba(255, 255, 255, 0.22);
     border-radius: 7px;
     box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.24);
+  }
+
+  .brush-color-team-icon {
+    width: 11px;
+    height: 11px;
+    object-fit: contain;
+    pointer-events: none;
+    user-select: none;
   }
 
   .brush-color-button-t .brush-color-swatch {
