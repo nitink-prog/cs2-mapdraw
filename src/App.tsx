@@ -87,9 +87,17 @@ type HistoryAction =
       kind: 'add'
     }
   | {
+      grenadeId: string
+      kind: 'moveGrenade'
+      next: Point
+      prev: Point
+    }
+  | {
       kind: 'remove'
       removedAnnotations: RemovedAnnotation[]
     }
+
+const GRENADE_MARKER_DRAG_HIT_RADIUS = 26
 
 type AnnotationHistory = {
   annotations: Annotation[]
@@ -424,6 +432,19 @@ function applyHistoryAction(annotations: Annotation[], action: HistoryAction) {
     return [...annotations, action.annotation]
   }
 
+  if (action.kind === 'moveGrenade') {
+    return annotations.map((annotation) => {
+      if (
+        annotation.kind === 'grenade' &&
+        annotation.id === action.grenadeId
+      ) {
+        return { ...annotation, x: action.next.x, y: action.next.y }
+      }
+
+      return annotation
+    })
+  }
+
   const removedIds = new Set(
     action.removedAnnotations.map(({ annotation }) => annotation.id),
   )
@@ -436,6 +457,19 @@ function revertHistoryAction(annotations: Annotation[], action: HistoryAction) {
     return annotations.filter(
       (annotation) => annotation.id !== action.annotation.id,
     )
+  }
+
+  if (action.kind === 'moveGrenade') {
+    return annotations.map((annotation) => {
+      if (
+        annotation.kind === 'grenade' &&
+        annotation.id === action.grenadeId
+      ) {
+        return { ...annotation, x: action.prev.x, y: action.prev.y }
+      }
+
+      return annotation
+    })
   }
 
   const nextAnnotations = [...annotations]
@@ -451,6 +485,21 @@ function revertHistoryAction(annotations: Annotation[], action: HistoryAction) {
   }
 
   return nextAnnotations
+}
+
+function findGrenadeMarkerAncestor(target: Konva.Node | null) {
+  const stage = target?.getStage() ?? null
+  let node: Konva.Node | null = target
+
+  while (node !== null && node !== stage) {
+    if (node.name() === 'grenade-marker') {
+      return node
+    }
+
+    node = node.getParent()
+  }
+
+  return null
 }
 
 type StageSize = {
@@ -570,6 +619,8 @@ type GrenadeEffectRadiusProps = {
   mapResolution: number
   origin: Point
   radius: number
+  /** @ink:perf Full raycast overlay is skipped during active grenade drag; use radial fallback until pointer release. */
+  useSimpleFlashWhileDragging: boolean
   useRaycastedFlashes: boolean
 }
 
@@ -618,11 +669,12 @@ function GrenadeEffectRadius({
   origin,
   radius,
   useRaycastedFlashes,
+  useSimpleFlashWhileDragging,
 }: GrenadeEffectRadiusProps) {
   const effect = GRENADE_EFFECTS[grenadeType]
 
   if (grenadeType === 'flash') {
-    if (!useRaycastedFlashes) {
+    if (!useRaycastedFlashes || useSimpleFlashWhileDragging) {
       return (
         <RadialFlashbangEffectRadius
           mapResolution={mapResolution}
@@ -715,6 +767,31 @@ function App() {
   const [brushCursorColor, setBrushCursorColor] = useState<BrushColor>(
     SIDE_BRUSH_COLORS.t,
   )
+  const [draggingGrenadeId, setDraggingGrenadeId] = useState<string | null>(
+    null,
+  )
+  const [draggingGrenadePosition, setDraggingGrenadePosition] =
+    useState<Point | null>(null)
+  const grenadeDragStartRef = useRef<{
+    id: string
+    x: number
+    y: number
+  } | null>(null)
+
+  const setKonvaCanvasesCursor = useCallback((cursor: string) => {
+    const stage = drawingLayerRef.current?.getStage()
+    const canvases = stage?.container()?.querySelectorAll('canvas')
+
+    canvases?.forEach((canvas) => {
+      if (canvas instanceof HTMLElement) {
+        canvas.style.cursor = cursor
+      }
+    })
+  }, [])
+
+  const restoreKonvaCanvasCursor = useCallback(() => {
+    setKonvaCanvasesCursor(selectedTool === 'ink' ? 'none' : 'crosshair')
+  }, [selectedTool, setKonvaCanvasesCursor])
 
   const stageStyle = useMemo(
     () => ({
@@ -986,6 +1063,10 @@ function App() {
 
     if (selectedTool !== 'ink') {
       if (event.evt.pointerType === 'mouse' && event.evt.button !== 0) {
+        return
+      }
+
+      if (findGrenadeMarkerAncestor(event.target as Konva.Node)) {
         return
       }
 
@@ -1446,7 +1527,8 @@ function App() {
                 ) : null}
               </Group>
             </Layer>
-            <Layer listening={false}>
+            {/* @ink:konva Layer listening picks up draggable grenades; ink Lines use listening={false} so hits pass through stacked strokes onto markers below where possible */}
+            <Layer listening>
               <Group
                 x={mapView.x}
                 y={mapView.y}
@@ -1458,6 +1540,7 @@ function App() {
                     return (
                       <Line
                         key={annotation.id}
+                        listening={false}
                         points={annotation.points}
                         stroke={annotation.color}
                         strokeWidth={BRUSH_SIZE}
@@ -1481,20 +1564,129 @@ function App() {
                         )
                       : null
 
+                  const displayX =
+                    draggingGrenadeId === annotation.id &&
+                    draggingGrenadePosition !== null
+                      ? draggingGrenadePosition.x
+                      : annotation.x
+                  const displayY =
+                    draggingGrenadeId === annotation.id &&
+                    draggingGrenadePosition !== null
+                      ? draggingGrenadePosition.y
+                      : annotation.y
+                  const useSimpleFlashWhileDragging =
+                    useRaycastedFlashes &&
+                    draggingGrenadeId === annotation.id
+
                   return (
                     <Group
                       key={annotation.id}
-                      x={annotation.x}
-                      y={annotation.y}
+                      name="grenade-marker"
+                      draggable
+                      x={displayX}
+                      y={displayY}
+                      dragBoundFunc={(pos) => ({
+                        x: Math.min(
+                          MAP_WORLD_SIZE,
+                          Math.max(0, pos.x),
+                        ),
+                        y: Math.min(
+                          MAP_WORLD_SIZE,
+                          Math.max(0, pos.y),
+                        ),
+                      })}
+                      onPointerDown={(pointerEvent) => {
+                        if (pointerEvent.evt.button === 0) {
+                          pointerEvent.cancelBubble = true
+                        }
+                      }}
+                      onDragStart={(dragEvent) => {
+                        dragEvent.cancelBubble = true
+                        grenadeDragStartRef.current = {
+                          id: annotation.id,
+                          x: annotation.x,
+                          y: annotation.y,
+                        }
+                        setDraggingGrenadeId(annotation.id)
+                        setDraggingGrenadePosition({
+                          x: annotation.x,
+                          y: annotation.y,
+                        })
+                        setKonvaCanvasesCursor('grabbing')
+                      }}
+                      onDragMove={(dragEvent) => {
+                        const node = dragEvent.target
+                        setDraggingGrenadePosition({
+                          x: node.x(),
+                          y: node.y(),
+                        })
+                      }}
+                      onDragEnd={(dragEvent) => {
+                        dragEvent.cancelBubble = true
+                        const node = dragEvent.target
+                        const next = {
+                          x: node.x(),
+                          y: node.y(),
+                        }
+                        const dragStartSnapshot = grenadeDragStartRef.current
+                        grenadeDragStartRef.current = null
+                        setDraggingGrenadeId(null)
+                        setDraggingGrenadePosition(null)
+                        restoreKonvaCanvasCursor()
+
+                        if (
+                          !dragStartSnapshot ||
+                          dragStartSnapshot.id !== annotation.id
+                        ) {
+                          return
+                        }
+
+                        const moved =
+                          Math.hypot(
+                            next.x - dragStartSnapshot.x,
+                            next.y - dragStartSnapshot.y,
+                          ) >= 0.5
+
+                        if (!moved) {
+                          return
+                        }
+
+                        pushHistoryAction(selectedMapId, {
+                          grenadeId: annotation.id,
+                          kind: 'moveGrenade',
+                          next,
+                          prev: {
+                            x: dragStartSnapshot.x,
+                            y: dragStartSnapshot.y,
+                          },
+                        })
+                      }}
+                      onMouseEnter={() => {
+                        if (draggingGrenadeId !== null) {
+                          return
+                        }
+
+                        setKonvaCanvasesCursor('grab')
+                      }}
+                      onMouseLeave={() => {
+                        if (draggingGrenadeId !== null) {
+                          return
+                        }
+
+                        restoreKonvaCanvasCursor()
+                      }}
                     >
                       {radius !== null && mapResolution !== null ? (
                         <GrenadeEffectRadius
                           grenadeType={annotation.grenadeType}
                           mapImage={mapImage}
                           mapResolution={mapResolution}
-                          origin={{ x: annotation.x, y: annotation.y }}
+                          origin={{ x: displayX, y: displayY }}
                           radius={radius}
                           useRaycastedFlashes={useRaycastedFlashes}
+                          useSimpleFlashWhileDragging={
+                            useSimpleFlashWhileDragging
+                          }
                         />
                       ) : null}
                       <Circle
@@ -1514,6 +1706,13 @@ function App() {
                         fontSize={13}
                         fontStyle="bold"
                         text={effect.symbol}
+                      />
+                      {/* @ink:ux Larger invisible hit target for touch and crosshair-vs-grab ergonomics */}
+                      <Circle
+                        radius={GRENADE_MARKER_DRAG_HIT_RADIUS}
+                        fill="rgba(0,0,0,0.001)"
+                        strokeEnabled={false}
+                        listening
                       />
                     </Group>
                   )
