@@ -915,13 +915,63 @@ button:focus-visible {
     grid-column: 1;
     grid-row: 1;
     order: 1;
-    max-height: 42svh;
-    overflow: auto;
+    max-height: none;
+    overflow: visible;
   }
 
-  .eyebrow,
+  /* @ink:ux Creator + buy-zone live only in the fullscreen map sheet on mobile, not in the collapsed top bar. */
+  .general-panel:not(.mobile-map-picker-sheet-open) .general-panel-footer {
+    display: none;
+  }
+
+  /* @ink:ux Full-viewport sheet above map + tools; body scroll locked from App.tsx while open. */
+  .side-panel.general-panel.mobile-map-picker-sheet-open {
+    position: fixed;
+    inset: 0;
+    z-index: 10000;
+    width: 100%;
+    max-width: none;
+    height: auto;
+    min-height: 100dvh;
+    max-height: none;
+    margin: 0;
+    border-radius: 0;
+    overflow-x: hidden;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    box-shadow: none;
+    padding:
+      max(10px, env(safe-area-inset-top))
+      max(12px, env(safe-area-inset-right))
+      max(12px, env(safe-area-inset-bottom))
+      max(12px, env(safe-area-inset-left));
+  }
+
+  .side-panel.general-panel.mobile-map-picker-sheet-open .general-panel-header {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    margin-right: -12px;
+    margin-left: -12px;
+    margin-bottom: 8px;
+    padding: 10px 12px 10px;
+    border-bottom: 1px solid var(--line);
+    background:
+      radial-gradient(circle at top left, rgba(255, 59, 48, 0.13), transparent 42%),
+      var(--panel);
+  }
+
+  .side-panel.general-panel.mobile-map-picker-sheet-open .map-picker.map-picker-open {
+    max-height: none;
+  }
+
   .desktop-map-title {
     display: none;
+  }
+
+  .general-panel .eyebrow {
+    display: block;
+    margin: 0 0 8px;
   }
 
   .side-panel h1 {
@@ -933,17 +983,17 @@ button:focus-visible {
   .mobile-map-picker-toggle {
     display: flex;
     width: 100%;
-    min-height: 44px;
+    min-height: 42px;
     align-items: center;
     justify-content: space-between;
-    gap: 12px;
+    gap: 10px;
     border-radius: 14px;
-    padding: 10px 12px;
+    padding: 8px 10px;
     background: rgba(255, 255, 255, 0.05);
-    font-size: 24px;
+    font-size: 20px;
     font-weight: 900;
     letter-spacing: -0.04em;
-    line-height: 1;
+    line-height: 1.05;
   }
 
   .map-picker-chevron {
@@ -964,7 +1014,8 @@ button:focus-visible {
     display: none;
     flex: 0 1 auto;
     grid-template-columns: repeat(2, minmax(0, 1fr));
-    max-height: 28svh;
+    min-height: 0;
+    max-height: min(28svh, 240px);
     overflow: auto;
   }
 
@@ -997,7 +1048,22 @@ button:focus-visible {
 
   .creator-attribution-card {
     border-radius: 14px;
-    padding: 10px 12px;
+    padding: 8px 10px;
+  }
+
+  .creator-attribution-heading {
+    font-size: 13px;
+    line-height: 1.2;
+  }
+
+  .creator-attribution-body {
+    margin-top: 6px;
+    font-size: 12px;
+    line-height: 1.35;
+  }
+
+  .creator-attribution-body + .creator-attribution-body {
+    margin-top: 4px;
   }
 
   .map-overlay-panel {
@@ -1010,9 +1076,30 @@ button:focus-visible {
   }
 
   .toggle-control {
-    min-height: 42px;
+    gap: 10px;
+    min-height: 40px;
     border-radius: 14px;
-    padding: 8px 10px;
+    padding: 6px 10px;
+  }
+
+  .toggle-switch {
+    width: 40px;
+    height: 22px;
+  }
+
+  .toggle-switch::after {
+    top: 3px;
+    left: 3px;
+    width: 14px;
+    height: 14px;
+  }
+
+  .toggle-control input:checked + .toggle-switch::after {
+    transform: translateX(18px);
+  }
+
+  .toggle-label {
+    font-size: 13px;
   }
 
   .map-workspace {
@@ -1054,7 +1141,11 @@ button:focus-visible {
     display: none;
   }
 
-  .clear-actions {
+  /* @ink:ux Narrow viewports cap tools-panel height; flex-shrink must not collapse the clear-ink segment (overflow:hidden would clip it). */
+  .tools-panel .clear-actions {
+    flex-shrink: 0;
+    align-self: stretch;
+    overflow: visible;
     border-radius: 14px;
   }
 

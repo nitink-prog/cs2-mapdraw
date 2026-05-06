@@ -18,6 +18,7 @@ import {
   type GrenadeType,
 } from './grenadeEffects'
 import { FlashExposureOverlay } from './FlashExposureOverlay'
+import { LabeledSwitch } from './LabeledSwitch'
 import {
   DEFAULT_MAP_ID,
   GAME_MAPS,
@@ -747,6 +748,33 @@ function App() {
     SIDE_BRUSH_COLORS.t,
   )
   const [isMapPickerOpen, setIsMapPickerOpen] = useState(false)
+
+  useEffect(() => {
+    if (!isMapPickerOpen) {
+      return
+    }
+    const priorOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    return () => {
+      document.body.style.overflow = priorOverflow
+    }
+  }, [isMapPickerOpen])
+
+  useEffect(() => {
+    if (!isMapPickerOpen) {
+      return
+    }
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault()
+        setIsMapPickerOpen(false)
+      }
+    }
+    window.addEventListener('keydown', handleEscape)
+    return () => {
+      window.removeEventListener('keydown', handleEscape)
+    }
+  }, [isMapPickerOpen])
   const [isAutoZoom, setIsAutoZoom] = useState(true)
   const [userZoom, setUserZoom] = useState(1)
   const [pan, setPan] = useState<Point>({ x: 0, y: 0 })
@@ -1423,7 +1451,12 @@ function App() {
 
   return (
     <main className="app-shell">
-      <aside className="side-panel general-panel" aria-label="General map settings">
+      <aside
+        className={`side-panel general-panel${isMapPickerOpen ? ' mobile-map-picker-sheet-open' : ''}`}
+        aria-label="General map settings"
+        role={isMapPickerOpen ? 'dialog' : undefined}
+        aria-modal={isMapPickerOpen ? true : undefined}
+      >
         <header className="general-panel-header">
           <p className="eyebrow">CS2 MapDraw</p>
           <h1 aria-label={selectedMap.name}>
@@ -1466,7 +1499,7 @@ function App() {
           })}
         </section>
 
-        {/* @ink:ux Footer uses margin-top:auto on desktop so attribution + overlays pin below the scrollable map grid; on mobile .general-panel scrolls (see App.css). */}
+        {/* @ink:ux Footer uses margin-top:auto on desktop so attribution + overlays pin below the scrollable map grid; on mobile the footer only appears inside the fullscreen map sheet (see .mobile-map-picker-sheet-open). */}
         <div className="general-panel-footer">
           <section
             className="creator-attribution-card"
@@ -1486,15 +1519,12 @@ function App() {
           </section>
 
           <section className="map-overlay-panel" aria-label="Map overlays">
-            <label className="toggle-control">
-              <input
-                type="checkbox"
-                checked={showBuyZones}
-                onChange={(event) => setShowBuyZones(event.target.checked)}
-              />
-              <span className="toggle-switch" aria-hidden="true" />
-              <span className="toggle-label">Show buy zone</span>
-            </label>
+            <LabeledSwitch
+              id="toggle-buy-zones"
+              label="Show buy zone"
+              checked={showBuyZones}
+              onChange={setShowBuyZones}
+            />
           </section>
         </div>
       </aside>
@@ -2093,17 +2123,12 @@ function App() {
           </div>
         </section>
         <section className="flash-overlay-panel" aria-label="Flash overlays">
-          <label className="toggle-control">
-            <input
-              type="checkbox"
-              checked={useRaycastedFlashes}
-              onChange={(event) =>
-                setUseRaycastedFlashes(event.target.checked)
-              }
-            />
-            <span className="toggle-switch" aria-hidden="true" />
-            <span className="toggle-label">Ray-casted Flashes</span>
-          </label>
+          <LabeledSwitch
+            id="toggle-raycast-flashes"
+            label="Ray-casted Flashes"
+            checked={useRaycastedFlashes}
+            onChange={setUseRaycastedFlashes}
+          />
         </section>
       </aside>
     </main>
