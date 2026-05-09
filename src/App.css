@@ -765,6 +765,76 @@ button:focus-visible {
   gap: 10px;
 }
 
+.player-tools-heading {
+  margin-top: 4px;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.player-tool-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.player-tool-button {
+  display: flex;
+  min-width: 0;
+  min-height: 88px;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border-radius: 20px;
+  padding: 10px 8px;
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+  cursor: pointer;
+  transition:
+    border-color 160ms ease,
+    background-color 160ms ease,
+    box-shadow 160ms ease,
+    color 160ms ease,
+    transform 160ms ease;
+}
+
+.player-tool-button:hover {
+  border-color: rgba(255, 255, 255, 0.28);
+  background: rgba(255, 255, 255, 0.085);
+  color: var(--text);
+  transform: translateY(-1px);
+}
+
+.player-tool-button[aria-pressed='true'] {
+  border-color: #22c55e;
+  background: rgba(34, 197, 94, 0.16);
+  color: var(--text);
+  box-shadow: 0 0 0 1px rgba(34, 197, 94, 0.34);
+}
+
+.player-tool-preview {
+  display: block;
+  flex-shrink: 0;
+}
+
+.player-tool-preview-svg {
+  display: block;
+  width: 40px;
+  height: 40px;
+}
+
+.player-tool-label-row {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+
 .utility-tool-cell {
   position: relative;
   display: flex;
@@ -1302,6 +1372,19 @@ button:focus-visible {
 
   .utility-tool-help-icon {
     font-size: 9px;
+  }
+
+  .player-tool-button {
+    min-height: 52px;
+    border-radius: 14px;
+    padding: 7px 6px;
+    font-size: 11px;
+    gap: 6px;
+  }
+
+  .player-tool-preview-svg {
+    width: 32px;
+    height: 32px;
   }
 
   .grenade-help-tooltip-portal {
