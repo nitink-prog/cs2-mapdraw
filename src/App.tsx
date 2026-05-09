@@ -43,6 +43,8 @@ function clientUsesAppleModifierHints(): boolean {
 }
 
 const MAP_WORLD_SIZE = 1024
+/** @ink:konva Shared by grenade centers and player markers — handle-only hits for ink skip + placement skip. */
+const PLACEMENT_DRAG_HANDLE_NODE_NAME = 'placement-drag-handle'
 const SIDE_BRUSH_COLORS = {
   t: '#FDAC1A',
   ct: '#1c3bec',
@@ -62,7 +64,8 @@ const WHEEL_ZOOM_FACTOR = 1.08
 const NAVIGATION_GESTURE_LOCK_RELEASE_MS = 180
 
 type BrushColor = (typeof SIDE_BRUSH_COLORS)[keyof typeof SIDE_BRUSH_COLORS]
-type ToolMode = 'ink' | GrenadeType
+type PlayerSide = keyof typeof SIDE_BRUSH_COLORS
+type ToolMode = 'ink' | GrenadeType | 'player-t' | 'player-ct'
 
 type InkStrokeAnnotation = {
   color: BrushColor
@@ -79,7 +82,15 @@ type GrenadeAnnotation = {
   y: number
 }
 
-type Annotation = InkStrokeAnnotation | GrenadeAnnotation
+type PlayerAnnotation = {
+  id: string
+  kind: 'player'
+  side: PlayerSide
+  x: number
+  y: number
+}
+
+type Annotation = InkStrokeAnnotation | GrenadeAnnotation | PlayerAnnotation
 
 type RemovedAnnotation = {
   annotation: Annotation
@@ -92,8 +103,8 @@ type HistoryAction =
       kind: 'add'
     }
   | {
-      grenadeId: string
-      kind: 'moveGrenade'
+      kind: 'moveMarker'
+      markerId: string
       next: Point
       prev: Point
     }
@@ -158,10 +169,85 @@ const UTILITY_TOOL_OPTIONS: {
 ]
 
 const TOOL_SHORTCUTS: Record<string, ToolMode> = {
+  '1': 'player-t',
+  '2': 'player-ct',
   a: 'smoke',
   d: 'molotov',
   s: 'flash',
   w: 'ink',
+}
+
+const PLAYER_TOOL_OPTIONS: {
+  id: Extract<ToolMode, 'player-t' | 'player-ct'>
+  label: string
+  shortcut: string
+  side: PlayerSide
+}[] = [
+  {
+    id: 'player-t',
+    label: 'T player',
+    shortcut: '1',
+    side: 't',
+  },
+  {
+    id: 'player-ct',
+    label: 'CT player',
+    shortcut: '2',
+    side: 'ct',
+  },
+]
+
+function isGrenadeToolMode(tool: ToolMode): tool is GrenadeType {
+  return tool === 'smoke' || tool === 'flash' || tool === 'molotov'
+}
+
+function PlayerToolCell({
+  option,
+  selectedTool,
+  onSelect,
+}: {
+  option: (typeof PLAYER_TOOL_OPTIONS)[number]
+  selectedTool: ToolMode
+  onSelect: (tool: Extract<ToolMode, 'player-t' | 'player-ct'>) => void
+}) {
+  const swatchFill = SIDE_BRUSH_COLORS[option.side]
+
+  return (
+    <button
+      type="button"
+      className={`player-tool-button player-tool-button-${option.side}`}
+      aria-pressed={selectedTool === option.id}
+      onClick={() => onSelect(option.id)}
+    >
+      <span className="player-tool-preview" aria-hidden="true">
+        <svg className="player-tool-preview-svg" viewBox="0 0 48 48">
+          <circle
+            cx={24}
+            cy={24}
+            r={16}
+            fill={swatchFill}
+            stroke="#0f172a"
+            strokeWidth={4}
+          />
+          <text
+            x={24}
+            y={option.side === 't' ? 30 : 29}
+            textAnchor="middle"
+            fill="#0f172a"
+            fontSize={option.side === 't' ? 18 : 11}
+            fontWeight={700}
+            fontFamily="system-ui, sans-serif"
+          >
+            {option.side === 't' ? 'T' : 'CT'}
+          </text>
+        </svg>
+      </span>
+      <span className="player-tool-label-row">
+        {option.label}
+        <kbd className="tool-shortcut-hint">{option.shortcut}</kbd>
+      </span>
+    </button>
+  )
 }
 
 function GrenadeUtilityToolCell({
@@ -435,12 +521,13 @@ function applyHistoryAction(annotations: Annotation[], action: HistoryAction) {
     return [...annotations, action.annotation]
   }
 
-  if (action.kind === 'moveGrenade') {
+  if (action.kind === 'moveMarker') {
     return annotations.map((annotation) => {
-      if (
-        annotation.kind === 'grenade' &&
-        annotation.id === action.grenadeId
-      ) {
+      if (annotation.id !== action.markerId) {
+        return annotation
+      }
+
+      if (annotation.kind === 'grenade' || annotation.kind === 'player') {
         return { ...annotation, x: action.next.x, y: action.next.y }
       }
 
@@ -462,12 +549,13 @@ function revertHistoryAction(annotations: Annotation[], action: HistoryAction) {
     )
   }
 
-  if (action.kind === 'moveGrenade') {
+  if (action.kind === 'moveMarker') {
     return annotations.map((annotation) => {
-      if (
-        annotation.kind === 'grenade' &&
-        annotation.id === action.grenadeId
-      ) {
+      if (annotation.id !== action.markerId) {
+        return annotation
+      }
+
+      if (annotation.kind === 'grenade' || annotation.kind === 'player') {
         return { ...annotation, x: action.prev.x, y: action.prev.y }
       }
 
@@ -525,11 +613,11 @@ function pointerEventHitsNamedSubtree(
   return findAncestorNamed(hit, ancestorName) !== null
 }
 
-/** @ink:konva Center F/S/M handle only — skips ink strokes and skips utility placement only when tapping an existing marker handle (overlap in blast radius stays allowed). */
-function isGrenadeDragHandlePointerEvent(
+/** @ink:konva Center placement handle only — skips ink strokes and skips utility/player placement only when tapping an existing marker handle (overlap in blast radius stays allowed). */
+function isPlacementDragHandlePointerEvent(
   event: KonvaEventObject<PointerEvent>,
 ) {
-  return pointerEventHitsNamedSubtree(event, 'grenade-drag-handle')
+  return pointerEventHitsNamedSubtree(event, PLACEMENT_DRAG_HANDLE_NODE_NAME)
 }
 
 type StageSize = {
@@ -825,12 +913,10 @@ function App() {
   const [brushCursorColor, setBrushCursorColor] = useState<BrushColor>(
     SIDE_BRUSH_COLORS.t,
   )
-  const [draggingGrenadeId, setDraggingGrenadeId] = useState<string | null>(
-    null,
-  )
-  const [draggingGrenadePosition, setDraggingGrenadePosition] =
+  const [draggingMarkerId, setDraggingMarkerId] = useState<string | null>(null)
+  const [draggingMarkerPosition, setDraggingMarkerPosition] =
     useState<Point | null>(null)
-  const grenadeDragStartRef = useRef<{
+  const markerDragStartRef = useRef<{
     id: string
     x: number
     y: number
@@ -1093,6 +1179,18 @@ function App() {
     })
   }
 
+  const addPlayerMarker = (side: PlayerSide, point: { x: number; y: number }) =>
+    pushHistoryAction(selectedMapId, {
+      annotation: {
+        id: getNextAnnotationId(),
+        kind: 'player',
+        side,
+        x: point.x,
+        y: point.y,
+      },
+      kind: 'add',
+    })
+
   const handlePointerDown = (event: KonvaEventObject<PointerEvent>) => {
     if (event.evt.pointerType === 'mouse' && event.evt.button === 1) {
       const stage = event.target.getStage()
@@ -1124,7 +1222,7 @@ function App() {
         return
       }
 
-      if (isGrenadeDragHandlePointerEvent(event)) {
+      if (isPlacementDragHandlePointerEvent(event)) {
         return
       }
 
@@ -1135,13 +1233,20 @@ function App() {
       }
 
       event.evt.preventDefault()
-      addGrenadeMarker(selectedTool, point)
+
+      if (isGrenadeToolMode(selectedTool)) {
+        addGrenadeMarker(selectedTool, point)
+      } else if (selectedTool === 'player-t') {
+        addPlayerMarker('t', point)
+      } else if (selectedTool === 'player-ct') {
+        addPlayerMarker('ct', point)
+      }
 
       return
     }
 
-    // @ink:konva Same handle-only hit test as utility placement.
-    if (isGrenadeDragHandlePointerEvent(event)) {
+    // @ink:konva Same handle-only hit test as utility / player placement.
+    if (isPlacementDragHandlePointerEvent(event)) {
       return
     }
 
@@ -1327,6 +1432,10 @@ function App() {
     removeCurrentMapAnnotations((annotation) => annotation.kind === 'grenade')
   }
 
+  const clearPlayerMarkers = () => {
+    removeCurrentMapAnnotations((annotation) => annotation.kind === 'player')
+  }
+
   const undoCurrentMapAction = useCallback(() => {
     setAnnotationHistories((currentHistories) => {
       const currentHistory = getAnnotationHistory(
@@ -1427,6 +1536,14 @@ function App() {
   const handleUtilityToolSelect = (utilityType: GrenadeType) => {
     setSelectedTool((currentTool) =>
       currentTool === utilityType ? 'ink' : utilityType,
+    )
+  }
+
+  const handlePlayerToolSelect = (
+    playerTool: Extract<ToolMode, 'player-t' | 'player-ct'>,
+  ) => {
+    setSelectedTool((currentTool) =>
+      currentTool === playerTool ? 'ink' : playerTool,
     )
   }
 
@@ -1592,7 +1709,7 @@ function App() {
                 ) : null}
               </Group>
             </Layer>
-            {/* @ink:konva Layer listening picks up draggable grenades; ink Lines use listening={false} so hits pass through stacked strokes onto markers below where possible */}
+            {/* @ink:konva Layer listening picks up draggable markers; ink Lines use listening={false} so hits pass through stacked strokes onto markers below where possible */}
             <Layer listening>
               <Group
                 x={mapView.x}
@@ -1616,6 +1733,174 @@ function App() {
                     )
                   }
 
+                  const displayPoint = {
+                    x:
+                      draggingMarkerId === annotation.id &&
+                      draggingMarkerPosition !== null
+                        ? draggingMarkerPosition.x
+                        : annotation.x,
+                    y:
+                      draggingMarkerId === annotation.id &&
+                      draggingMarkerPosition !== null
+                        ? draggingMarkerPosition.y
+                        : annotation.y,
+                  }
+                  const { x: displayX, y: displayY } = displayPoint
+
+                  if (annotation.kind === 'player') {
+                    const diskFill = SIDE_BRUSH_COLORS[annotation.side]
+
+                    return (
+                      <Group
+                        key={annotation.id}
+                        name="player-annotation"
+                        x={displayX}
+                        y={displayY}
+                      >
+                        {/* @ink:ux Same center-handle drag absorb pattern as grenade markers; circle body is the handle hit target. */}
+                        <Group
+                          draggable
+                          name={PLACEMENT_DRAG_HANDLE_NODE_NAME}
+                          onDragStart={(dragEvent) => {
+                            dragEvent.cancelBubble = true
+                            const handle = dragEvent.target as Konva.Group
+                            handle.x(0)
+                            handle.y(0)
+                            markerDragStartRef.current = {
+                              id: annotation.id,
+                              x: annotation.x,
+                              y: annotation.y,
+                            }
+                            setDraggingMarkerId(annotation.id)
+                            setDraggingMarkerPosition({
+                              x: annotation.x,
+                              y: annotation.y,
+                            })
+                            setKonvaCanvasesCursor('grabbing')
+                          }}
+                          onDragMove={(dragEvent) => {
+                            const handle = dragEvent.target as Konva.Group
+                            const parent = handle.getParent()
+                            if (!parent) {
+                              return
+                            }
+
+                            let nextX = parent.x() + handle.x()
+                            let nextY = parent.y() + handle.y()
+                            nextX = Math.min(
+                              MAP_WORLD_SIZE,
+                              Math.max(0, nextX),
+                            )
+                            nextY = Math.min(
+                              MAP_WORLD_SIZE,
+                              Math.max(0, nextY),
+                            )
+                            parent.x(nextX)
+                            parent.y(nextY)
+                            handle.x(0)
+                            handle.y(0)
+                            setDraggingMarkerPosition({
+                              x: nextX,
+                              y: nextY,
+                            })
+                          }}
+                          onDragEnd={(dragEvent) => {
+                            dragEvent.cancelBubble = true
+                            const handle = dragEvent.target as Konva.Group
+                            const parent = handle.getParent()
+                            if (!parent) {
+                              return
+                            }
+
+                            let nextX = parent.x() + handle.x()
+                            let nextY = parent.y() + handle.y()
+                            nextX = Math.min(
+                              MAP_WORLD_SIZE,
+                              Math.max(0, nextX),
+                            )
+                            nextY = Math.min(
+                              MAP_WORLD_SIZE,
+                              Math.max(0, nextY),
+                            )
+                            parent.x(nextX)
+                            parent.y(nextY)
+                            handle.x(0)
+                            handle.y(0)
+
+                            const dragStartSnapshot = markerDragStartRef.current
+                            markerDragStartRef.current = null
+                            setDraggingMarkerId(null)
+                            setDraggingMarkerPosition(null)
+                            restoreKonvaCanvasCursor()
+
+                            if (
+                              !dragStartSnapshot ||
+                              dragStartSnapshot.id !== annotation.id
+                            ) {
+                              return
+                            }
+
+                            const moved =
+                              Math.hypot(
+                                nextX - dragStartSnapshot.x,
+                                nextY - dragStartSnapshot.y,
+                              ) >= 0.5
+
+                            if (!moved) {
+                              return
+                            }
+
+                            pushHistoryAction(selectedMapId, {
+                              kind: 'moveMarker',
+                              markerId: annotation.id,
+                              next: {
+                                x: nextX,
+                                y: nextY,
+                              },
+                              prev: {
+                                x: dragStartSnapshot.x,
+                                y: dragStartSnapshot.y,
+                              },
+                            })
+                          }}
+                          onMouseEnter={() => {
+                            if (draggingMarkerId !== null) {
+                              return
+                            }
+
+                            setKonvaCanvasesCursor('grab')
+                          }}
+                          onMouseLeave={() => {
+                            if (draggingMarkerId !== null) {
+                              return
+                            }
+
+                            restoreKonvaCanvasCursor()
+                          }}
+                        >
+                          <Circle
+                            radius={13}
+                            fill={diskFill}
+                            stroke="#0f172a"
+                            strokeWidth={3}
+                          />
+                          <Text
+                            x={annotation.side === 't' ? -7 : -12}
+                            y={-8}
+                            width={annotation.side === 't' ? 14 : 24}
+                            height={16}
+                            align="center"
+                            verticalAlign="middle"
+                            fill="#0f172a"
+                            fontSize={annotation.side === 't' ? 13 : 11}
+                            fontStyle="bold"
+                            text={annotation.side === 't' ? 'T' : 'CT'}
+                          />
+                        </Group>
+                      </Group>
+                    )
+                  }
+
                   const effect = GRENADE_EFFECTS[annotation.grenadeType]
                   const mapResolution =
                     selectedMapMetadata.status === 'ready'
@@ -1629,19 +1914,10 @@ function App() {
                         )
                       : null
 
-                  const displayX =
-                    draggingGrenadeId === annotation.id &&
-                    draggingGrenadePosition !== null
-                      ? draggingGrenadePosition.x
-                      : annotation.x
-                  const displayY =
-                    draggingGrenadeId === annotation.id &&
-                    draggingGrenadePosition !== null
-                      ? draggingGrenadePosition.y
-                      : annotation.y
                   const useSimpleFlashWhileDragging =
                     useRaycastedFlashes &&
-                    draggingGrenadeId === annotation.id
+                    draggingMarkerId === annotation.id &&
+                    annotation.grenadeType === 'flash'
 
                   return (
                     <Group
@@ -1666,19 +1942,19 @@ function App() {
                       {/* @ink:ux Draggable hit is only this group (F/S/M); AO visuals are non-interactive except via Stage routing */}
                       <Group
                         draggable
-                        name="grenade-drag-handle"
+                        name={PLACEMENT_DRAG_HANDLE_NODE_NAME}
                         onDragStart={(dragEvent) => {
                           dragEvent.cancelBubble = true
                           const handle = dragEvent.target as Konva.Group
                           handle.x(0)
                           handle.y(0)
-                          grenadeDragStartRef.current = {
+                          markerDragStartRef.current = {
                             id: annotation.id,
                             x: annotation.x,
                             y: annotation.y,
                           }
-                          setDraggingGrenadeId(annotation.id)
-                          setDraggingGrenadePosition({
+                          setDraggingMarkerId(annotation.id)
+                          setDraggingMarkerPosition({
                             x: annotation.x,
                             y: annotation.y,
                           })
@@ -1705,7 +1981,7 @@ function App() {
                           parent.y(nextY)
                           handle.x(0)
                           handle.y(0)
-                          setDraggingGrenadePosition({
+                          setDraggingMarkerPosition({
                             x: nextX,
                             y: nextY,
                           })
@@ -1733,11 +2009,10 @@ function App() {
                           handle.x(0)
                           handle.y(0)
 
-                          const dragStartSnapshot =
-                            grenadeDragStartRef.current
-                          grenadeDragStartRef.current = null
-                          setDraggingGrenadeId(null)
-                          setDraggingGrenadePosition(null)
+                          const dragStartSnapshot = markerDragStartRef.current
+                          markerDragStartRef.current = null
+                          setDraggingMarkerId(null)
+                          setDraggingMarkerPosition(null)
                           restoreKonvaCanvasCursor()
 
                           if (
@@ -1758,8 +2033,8 @@ function App() {
                           }
 
                           pushHistoryAction(selectedMapId, {
-                            grenadeId: annotation.id,
-                            kind: 'moveGrenade',
+                            kind: 'moveMarker',
+                            markerId: annotation.id,
                             next: {
                               x: nextX,
                               y: nextY,
@@ -1771,14 +2046,14 @@ function App() {
                           })
                         }}
                         onMouseEnter={() => {
-                          if (draggingGrenadeId !== null) {
+                          if (draggingMarkerId !== null) {
                             return
                           }
 
                           setKonvaCanvasesCursor('grab')
                         }}
                         onMouseLeave={() => {
-                          if (draggingGrenadeId !== null) {
+                          if (draggingMarkerId !== null) {
                             return
                           }
 
@@ -1834,7 +2109,7 @@ function App() {
         <div
           className="clear-actions"
           role="group"
-          aria-label="Clear ink lines or grenade markers"
+          aria-label="Clear ink lines, grenades, or player markers"
         >
           <button type="button" className="clear-action-button" onClick={clearDrawing}>
             <svg
@@ -1876,6 +2151,21 @@ function App() {
               />
             </svg>
             <span>Clear grenades</span>
+          </button>
+          <button
+            type="button"
+            className="clear-action-button"
+            onClick={clearPlayerMarkers}
+          >
+            <svg
+              className="clear-action-icon"
+              viewBox="0 0 24 24"
+              aria-hidden="true"
+            >
+              <circle cx={9} cy={10} r={4} fill="none" stroke="currentColor" strokeWidth="2" />
+              <circle cx={15} cy={14} r={4} fill="none" stroke="currentColor" strokeWidth="2" />
+            </svg>
+            <span>Clear players</span>
           </button>
         </div>
         <div className="history-actions" aria-label="Map history controls">
@@ -2118,6 +2408,18 @@ function App() {
                 tool={tool}
                 selectedTool={selectedTool}
                 onSelect={handleUtilityToolSelect}
+              />
+            ))}
+          </div>
+          {/* @ink:ux Same toggle-to-ink pattern as grenade utilities — tap map to stamp team-colored circles with draggable centers. */}
+          <div className="player-tools-heading">Player markers</div>
+          <div className="player-tool-grid">
+            {PLAYER_TOOL_OPTIONS.map((option) => (
+              <PlayerToolCell
+                key={option.id}
+                option={option}
+                selectedTool={selectedTool}
+                onSelect={handlePlayerToolSelect}
               />
             ))}
           </div>
